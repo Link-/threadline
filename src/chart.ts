@@ -1,4 +1,4 @@
-import { addDays, confidenceLevel, daysBetween, formatDate, summarizePlan, today } from './model'
+import { addDays, confidenceLevel, daysBetween, formatDate, planFileStem, summarizePlan, today } from './model'
 import type { ConfidenceLevel, Plan, Row, Span } from './model'
 
 export const LABEL_WIDTH = 320
@@ -362,14 +362,21 @@ export async function exportPng(
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((result) => result ? resolve(result) : reject(new Error('PNG export failed. Try a smaller date range.')), 'image/png'),
   )
+  downloadFile(blob, `${planFileStem(plan.name)}.png`)
+}
+
+export function downloadFile(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `${plan.name.trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'threadline-chart'}.png`
+  link.download = filename
   document.body.append(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  try {
+    link.click()
+  } finally {
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
 }
 
 export function itemDateLabel(span: Span | null): string {

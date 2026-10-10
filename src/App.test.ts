@@ -38,6 +38,9 @@ describe('plan summary', () => {
     const html = renderPlan([])
     expect(html).toContain('No dates yet')
     expect(html).not.toContain('calendar days')
+    expect(html).toContain('Save locally')
+    expect(html).toContain('Import plan')
+    expect(html).toContain('accept=".threadline.json,.json,application/json"')
   })
 
   it('loads saved Daymark plans when the Threadline storage key has not been written yet', () => {

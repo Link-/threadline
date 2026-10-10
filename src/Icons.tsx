@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type IconName = 'plus' | 'chevron' | 'folder' | 'tasks' | 'download' | 'expand' | 'grip' |
+type IconName = 'plus' | 'chevron' | 'folder' | 'tasks' | 'download' | 'upload' | 'expand' | 'grip' |
   'shrink' | 'close' | 'trash' | 'menu' | 'arrowUp' | 'arrowDown' | 'calendar' | 'link' | 'check' |
   'sidebarOpen' | 'sidebarClose'
 
@@ -10,6 +10,7 @@ const shapes: Record<IconName, ReactNode> = {
   folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10H3V7Z" />,
   tasks: <><path d="M8 6h13M8 12h13M8 18h13" /><path d="m2 6 1.5 1.5L6 4M2 12l1.5 1.5L6 10M2 18l1.5 1.5L6 16" /></>,
   download: <><path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3" /></>,
+  upload: <><path d="M12 16V4m-4 4 4-4 4 4M4 17v3h16v-3" /></>,
   expand: <><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></>,
   shrink: <><path d="M3 9h6V3m12 6h-6V3M3 15h6v6m12-6h-6v6" /></>,
   close: <path d="M5 5 19 19M19 5 5 19" />,

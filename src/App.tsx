@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   adjacentSiblingDrop, confidenceLevel, createWorkspace, dateNumber, daysBetween, dragDates, flattenItems, formatDate,
-  isDescendant, makeItem, parseNewLine, parseWorkspace, relocateItem, rowDropIntent,
-  LEGACY_STORAGE_KEY, schedulePlan, STORAGE_KEY, summarizePlan, today,
+  isDescendant, makeItem, parseNewLine, parsePlanFile, parseWorkspace, planFileStem, relocateItem, rowDropIntent,
+  LEGACY_STORAGE_KEY, schedulePlan, serializePlan, STORAGE_KEY, summarizePlan, today,
 } from './model'
 import type { DragMode, Item, Plan, Row, RowDrop, Span, Workspace } from './model'
 import {
-  barGeometry, clampLabelWidth, createTimeline, dependencyLinks, exportPng, HEADER_HEIGHT,
+  barGeometry, clampLabelWidth, createTimeline, dependencyLinks, downloadFile, exportPng, HEADER_HEIGHT,
   itemDateLabel, LABEL_WIDTH, linkPath, MIN_LABEL_WIDTH, MAX_LABEL_WIDTH, ROW_HEIGHT,
 } from './chart'
 import { Icon } from './Icons'
@@ -90,6 +90,7 @@ export default function App() {
   const boardBodyRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLInputElement>(null)
+  const importRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const rowDragRef = useRef<RowDrag | null>(null)
   const rowPreviewRef = useRef<HTMLDivElement>(null)
@@ -622,6 +623,40 @@ export default function App() {
     }
   }
 
+  function savePlanFile() {
+    try {
+      const contents = serializePlan(plan)
+      downloadFile(new Blob([contents], { type: 'application/json' }), `${planFileStem(plan.name)}.threadline.json`)
+      setError(null)
+    } catch (saveError) {
+      setError(`Could not save plan file: ${message(saveError)}`)
+    }
+  }
+
+  async function importPlanFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    try {
+      const imported = parsePlanFile(await file.text())
+      const id = crypto.randomUUID()
+      const current = workspaceRef.current
+      applyWorkspace({
+        ...current,
+        activePlanId: id,
+        plans: [...current.plans, { ...imported, id }],
+      })
+      setSelectedId(null)
+      setMobileNav(false)
+      setPlanMenu(false)
+      setContextMenu(null)
+      setHovered(null)
+      setDraft('')
+    } catch (importError) {
+      setError(`Could not import plan: ${message(importError)}`)
+    }
+  }
+
   if (loadError) {
     return (
       <main className="recovery">
@@ -713,6 +748,9 @@ export default function App() {
             <p>A clear view of what comes next. Changes are saved automatically.</p>
           </div>
           <div className="heading-actions">
+            <button className="primary-button" onClick={savePlanFile} title="Download this plan as a reusable JSON file"><Icon name="download" size={17} /> Save locally</button>
+            <button className="outline-button" onClick={() => importRef.current?.click()}><Icon name="upload" size={17} /> Import plan</button>
+            <input ref={importRef} type="file" hidden accept=".threadline.json,.json,application/json" aria-label="Choose a Threadline plan file" onChange={importPlanFile} />
             <button className="outline-button" onClick={downloadChart} disabled={exporting}><Icon name="download" size={17} /> {exporting ? 'Exporting…' : 'Export PNG'}</button>
           </div>
         </div>

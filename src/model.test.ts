@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays, adjacentSiblingDrop, confidenceLevel, createWorkspace, daysBetween, dragDates, flattenItems, isDescendant,
-  parseNewLine, parseWorkspace, relocateItem, rowDropIntent, schedulePlan, summarizePlan,
+  parseNewLine, parsePlanFile, parseWorkspace, planFileStem, relocateItem, rowDropIntent, schedulePlan,
+  serializePlan, summarizePlan,
 } from './model'
 import type { Item, Plan, Workspace } from './model'
 import { barGeometry, clampLabelWidth, createTimeline, dependencyLinks, itemDateLabel, linkPath, linkPoints, ROW_HEIGHT } from './chart'
@@ -244,6 +245,45 @@ describe('groups and dependencies', () => {
 })
 
 describe('storage and chart layout', () => {
+  it('exports and restores a complete portable plan without losing groups or dependencies', () => {
+    const original = createWorkspace().plans[0]
+    const file = serializePlan(original)
+    expect(JSON.parse(file)).toEqual({ format: 'threadline-plan', version: 1, plan: original })
+    expect(parsePlanFile(file)).toEqual(original)
+    expect(planFileStem('  My plan / launch!  ')).toBe('My-plan-launch')
+    expect(planFileStem('???')).toBe('threadline-plan')
+
+    const legacy = JSON.parse(file) as { format: string; version: number; plan: Plan }
+    delete (legacy.plan.items[0] as Partial<Item>).confidence
+    expect(parsePlanFile(JSON.stringify(legacy)).items[0].confidence).toBeNull()
+  })
+
+  it('rejects wrong formats, unsupported versions, and invalid imported schedules', () => {
+    const original = createWorkspace().plans[0]
+    const file = JSON.parse(serializePlan(original)) as { format: string; version: number; plan: Plan }
+    expect(() => parsePlanFile('{bad')).toThrow('not valid JSON')
+    expect(() => parsePlanFile(JSON.stringify({ ...file, format: 'other' }))).toThrow('not a Threadline plan')
+    expect(() => parsePlanFile(JSON.stringify({ ...file, version: 2 }))).toThrow('unsupported version')
+    expect(() => parsePlanFile(JSON.stringify({ ...file, plan: {} }))).toThrow('no valid plan')
+    expect(() => parsePlanFile(JSON.stringify({ ...file, plan: { ...original, items: 'bad' } })))
+      .toThrow('saved plan is invalid')
+    expect(() => parsePlanFile(JSON.stringify({
+      ...file,
+      plan: { ...original, items: original.items.map((item) => item.kind === 'task'
+        ? { ...item, dependencies: ['missing'] } : item) },
+    }))).toThrow('missing item')
+  })
+
+  it('restores plans whose item IDs match inherited object property names', () => {
+    const unusual = plan([
+      task('__proto__', '2026-01-01', '2026-01-02'),
+      task('toString', '2026-01-01', '2026-01-02', ['__proto__']),
+    ])
+    const restored = parsePlanFile(serializePlan(unusual))
+    expect(schedulePlan(restored).toString).toEqual({ start: '2026-01-03', end: '2026-01-04' })
+    expect(summarizePlan(restored, schedulePlan(restored)).calendarDays).toBe(3)
+  })
+
   it('assigns confidence colors at the requested boundaries and rejects invalid percentages', () => {
     expect(confidenceLevel(null)).toBe('unrated')
     expect(confidenceLevel(0)).toBe('low')

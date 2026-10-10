@@ -233,7 +233,7 @@ export function schedulePlan(plan: Plan): Record<string, Span | null> {
     return result
   }
 
-  const spans: Record<string, Span | null> = {}
+  const spans: Record<string, Span | null> = Object.create(null)
   const visiting = new Set<string>()
   function schedule(task: Item): Span {
     const existing = spans[task.id]
@@ -318,6 +318,11 @@ export function createWorkspace(): Workspace {
 
 export const STORAGE_KEY = 'threadline-workspace-v1'
 export const LEGACY_STORAGE_KEY = 'daymark-workspace-v1'
+const PLAN_FILE_FORMAT = 'threadline-plan'
+
+export function planFileStem(name: string): string {
+  return name.trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'threadline-plan'
+}
 
 export function parseWorkspace(raw: string): Workspace {
   const value: unknown = JSON.parse(raw)
@@ -354,4 +359,30 @@ export function parseWorkspace(raw: string): Workspace {
       items: plan.items.map((item) => ({ ...item, confidence: item.confidence ?? null })),
     })),
   }
+}
+
+export function serializePlan(plan: Plan): string {
+  schedulePlan(plan)
+  return `${JSON.stringify({ format: PLAN_FILE_FORMAT, version: 1, plan }, null, 2)}\n`
+}
+
+export function parsePlanFile(raw: string): Plan {
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    throw new Error('The selected file is not valid JSON.')
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('This is not a Threadline plan file.')
+  }
+  const file = value as { format?: unknown; version?: unknown; plan?: unknown }
+  if (file.format !== PLAN_FILE_FORMAT) throw new Error('This is not a Threadline plan file.')
+  if (file.version !== 1) throw new Error('This Threadline plan file uses an unsupported version.')
+  const imported = file.plan
+  if (typeof imported !== 'object' || imported === null || Array.isArray(imported) ||
+    !('id' in imported) || typeof imported.id !== 'string') {
+    throw new Error('This Threadline plan file has no valid plan.')
+  }
+  return parseWorkspace(JSON.stringify({ version: 1, activePlanId: imported.id, plans: [imported] })).plans[0]
 }
