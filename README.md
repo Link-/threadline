@@ -1,6 +1,6 @@
 # Threadline
 
-A private, local Gantt chart creator. Plans and tasks live in this browser's `localStorage`; there is no account, backend, or network service required by the app. Use **Save locally** to download the active plan as a `.threadline.json` file, then **Import plan** to add it back as a new plan. Existing plans saved as Daymark are carried over automatically on the same browser origin.
+A private, local Gantt chart creator. Plans and tasks live in this browser's `localStorage`; there is no account, backend, or network service required by the app. Drag task bars sideways to change dates or drag task and group bars vertically to reorder and nest rows; the name list follows the timeline. Use **Save locally** to download the active plan as a `.threadline.json` file, then **Import plan** to add it back as a new plan. Existing plans saved as Daymark are carried over automatically on the same browser origin.
 
 ![Threadline demo showing grouped tasks, dependency links, confidence colors, and the plan summary](docs/threadline-demo.png)
 

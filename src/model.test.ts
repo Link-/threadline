@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addDays, adjacentSiblingDrop, confidenceLevel, createWorkspace, daysBetween, dragDates, flattenItems, isDescendant,
+  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, daysBetween, dragDates, flattenItems, isDescendant,
   parseNewLine, parsePlanFile, parseWorkspace, planFileStem, relocateItem, rowDropIntent, schedulePlan,
   serializePlan, summarizePlan,
 } from './model'
@@ -45,6 +45,15 @@ describe('date semantics', () => {
     expect(dragDates(span, 'end', 2)).toEqual({ start: '2026-01-10', end: '2026-01-15' })
     expect(dragDates(span, 'start', 10)).toEqual({ start: '2026-01-13', end: '2026-01-13' })
     expect(dragDates(span, 'end', -10)).toEqual({ start: '2026-01-10', end: '2026-01-10' })
+  })
+
+  it('locks task bar drags to their dominant axis and treats group bar drags as vertical only', () => {
+    expect(barDragAxis('task', 5, 5)).toBe('pending')
+    expect(barDragAxis('task', 18, 3)).toBe('horizontal')
+    expect(barDragAxis('task', 5, 12)).toBe('vertical')
+    expect(barDragAxis('task', 12, 12)).toBe('vertical')
+    expect(barDragAxis('group', 90, 3)).toBe('pending')
+    expect(barDragAxis('group', 90, 12)).toBe('vertical')
   })
 
   it('labels duration as the elapsed difference between start and finish', () => {
@@ -178,6 +187,26 @@ describe('groups and dependencies', () => {
     expect(() => relocateItem(original, 'child', { anchorId: 'other', placement: 'inside' })).not.toThrow()
     expect(flattenItems(relocateItem(moved, 'child', { anchorId: null, placement: 'end' })).at(-1)?.item.id)
       .toBe('child')
+  })
+
+  it('moves group bars with their children and accepts task bar drops at a destination group depth', () => {
+    const items = [
+      group('phase'),
+      task('child', '2026-01-01', '2026-01-02', [], 'phase'),
+      group('destination'),
+      task('other', '2026-01-01', '2026-01-02', [], 'destination'),
+    ]
+    const inside = rowDropIntent(items, 'destination', 0, 70, .5)
+    const nested = relocateItem(items, 'phase', inside)
+    expect(flattenItems(nested).map(({ item, depth }) => [item.id, depth]))
+      .toEqual([['destination', 0], ['phase', 1], ['child', 2], ['other', 1]])
+    const beforeChild = rowDropIntent(nested, 'other', 1, 33 + 17, .25)
+    expect(beforeChild).toEqual({ anchorId: 'other', placement: 'before' })
+    const movedChild = relocateItem(nested, 'child', beforeChild)
+    expect(flattenItems(movedChild).map(({ item, depth }) => [item.id, depth]))
+      .toEqual([['destination', 0], ['phase', 1], ['child', 1], ['other', 1]])
+    expect(flattenItems(relocateItem(movedChild, 'child', { anchorId: null, placement: 'end' }))
+      .at(-1)?.item.parentId).toBeNull()
   })
 
   it('expands a collapsed drop target and detects dependency cycles introduced by nesting', () => {

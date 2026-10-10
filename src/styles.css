@@ -301,6 +301,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .board-row.group-row { background: #f9fbf8; }
 .board-row.selected-row .row-label { background: #eef7ee; }
 .board-row.row-dragging .row-label { opacity: .45; }
+.board-row.row-dragging .task-bar, .board-row.row-dragging .group-bar { opacity: .35; }
 .board-row.drop-inside .row-label { background: #e4f3e8; box-shadow: inset 0 0 0 2px #74b990; }
 .board-row.drop-before::before, .board-row.drop-after::after, .board-row.drop-end::before {
   content: '';
@@ -376,6 +377,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
   pointer-events: none;
   will-change: transform;
 }
+.row-drag-preview.bar-origin { border-color: var(--confidence-color); border-left-width: 4px; padding-left: 10px; }
 .preview-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--confidence-color); }
 .dependency-layer { position: absolute; top: 0; z-index: 2; overflow: visible; pointer-events: none; }
 .today-line { position: absolute; top: 0; z-index: 2; width: 1px; background: #82bb8b; pointer-events: none; opacity: .8; }
@@ -398,11 +400,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .start-handle::after { left: 4px; }
 .end-handle { right: 0; }
 .end-handle::after { right: 4px; }
-.group-bar { height: 10px; border: 0; border-radius: 3px; background: var(--confidence-color); opacity: .75; padding: 0; }
-.group-bar::before, .group-bar::after { content: ''; position: absolute; width: 3px; height: 14px; top: -2px; border-radius: 1px; background: var(--confidence-color); }
+.group-bar { height: 24px; border: 0; border-radius: 3px; background: linear-gradient(to bottom, transparent 7px, var(--confidence-color) 7px, var(--confidence-color) 17px, transparent 17px); opacity: .75; padding: 0; cursor: grab; touch-action: none; }
+.group-bar::before, .group-bar::after { content: ''; position: absolute; width: 3px; height: 14px; top: 5px; border-radius: 1px; background: var(--confidence-color); }
 .group-bar::before { left: 0; }
 .group-bar::after { right: 0; }
-.group-bar:hover { opacity: 1; }
+.group-bar:hover, .group-bar.dragging { opacity: 1; }
+.group-bar:active { cursor: grabbing; }
 .chart-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 41px; flex: 0 0 41px; padding: 0 18px; border-top: 1px solid #e9eee9; color: #9baa9e; font-size: 10px; }
 .chart-footer span:first-child { display: flex; align-items: center; gap: 6px; }
 .footer-dot { width: 5px; height: 5px; background: #76b591; border-radius: 50%; }

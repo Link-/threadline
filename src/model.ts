@@ -34,6 +34,7 @@ export type PlanSummary = {
 }
 export type Row = { item: Item; depth: number }
 export type DragMode = 'move' | 'start' | 'end'
+export type BarAxis = 'pending' | 'horizontal' | 'vertical'
 export type RowPlacement = 'before' | 'after' | 'inside' | 'end'
 export type RowDrop = { anchorId: string | null; placement: RowPlacement }
 export type ConfidenceLevel = 'high' | 'medium' | 'low' | 'unrated'
@@ -67,6 +68,13 @@ export function dragDates(span: Span, mode: DragMode, delta: number): Span {
   }
   const end = addDays(span.end, delta)
   return { start: span.start, end: end < span.start ? span.start : end }
+}
+
+export function barDragAxis(kind: Item['kind'], dx: number, dy: number): BarAxis {
+  if (kind === 'group') return Math.abs(dy) >= 9 ? 'vertical' : 'pending'
+  if (Math.abs(dy) >= 9 && Math.abs(dy) >= Math.abs(dx)) return 'vertical'
+  if (Math.abs(dx) >= 9 && Math.abs(dx) > Math.abs(dy)) return 'horizontal'
+  return 'pending'
 }
 
 export function today(): ISODate {

@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
-  adjacentSiblingDrop, confidenceLevel, createWorkspace, dateNumber, daysBetween, dragDates, flattenItems, formatDate,
+  adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, dateNumber, daysBetween, dragDates, flattenItems, formatDate,
   isDescendant, makeItem, parseNewLine, parsePlanFile, parseWorkspace, planFileStem, relocateItem, rowDropIntent,
   LEGACY_STORAGE_KEY, schedulePlan, serializePlan, STORAGE_KEY, summarizePlan, today,
 } from './model'
-import type { DragMode, Item, Plan, Row, RowDrop, Span, Workspace } from './model'
+import type { BarAxis, DragMode, Item, Plan, Row, RowDrop, Span, Workspace } from './model'
 import {
   barGeometry, clampLabelWidth, createTimeline, dependencyLinks, downloadFile, exportPng, HEADER_HEIGHT,
   itemDateLabel, LABEL_WIDTH, linkPath, MIN_LABEL_WIDTH, MAX_LABEL_WIDTH, ROW_HEIGHT,
@@ -14,14 +14,18 @@ import { Icon } from './Icons'
 
 type Drag = {
   itemId: string
+  kind: Item['kind']
   pointerId: number
   x: number
+  y: number
   delta: number
   mode: DragMode
+  axis: BarAxis
   span: Span
 }
 type RowDrag = {
   itemId: string
+  source: 'label' | 'bar'
   planId: string
   pointerId: number
   x: number
@@ -82,6 +86,7 @@ export default function App() {
   const [labelWidth, setLabelWidth] = useState(LABEL_WIDTH)
   const [exporting, setExporting] = useState(false)
   const [draft, setDraft] = useState('')
+  const [draggingBarId, setDraggingBarId] = useState<string | null>(null)
   const [draggingRowId, setDraggingRowId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<RowDrop | null>(null)
   const [contextMenu, setContextMenu] = useState<{ itemId: string; x: number; y: number } | null>(null)
@@ -92,6 +97,7 @@ export default function App() {
   const composerRef = useRef<HTMLInputElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<Drag | null>(null)
+  const suppressBarClickRef = useRef<string | null>(null)
   const rowDragRef = useRef<RowDrag | null>(null)
   const rowPreviewRef = useRef<HTMLDivElement>(null)
   const rowFrameRef = useRef<number | null>(null)
@@ -322,10 +328,7 @@ export default function App() {
     }
   }
 
-  function startRowDrag(event: ReactPointerEvent<HTMLSpanElement>, item: Item) {
-    if (event.button !== 0 || rowDragRef.current) return
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
+  function prepareRowDrag(event: ReactPointerEvent<HTMLElement>, item: Item, source: RowDrag['source']) {
     const byId = new Map(plan.items.map((entry) => [entry.id, entry]))
     const forbidden = new Set([item.id])
     for (const entry of plan.items) {
@@ -339,12 +342,19 @@ export default function App() {
       }
     }
     rowDragRef.current = {
-      itemId: item.id, planId: plan.id, pointerId: event.pointerId,
+      itemId: item.id, source, planId: plan.id, pointerId: event.pointerId,
       x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY,
       active: false, targetId: null, items: plan.items, rows, forbidden,
     }
     setHovered(null)
     setContextMenu(null)
+  }
+
+  function startRowDrag(event: ReactPointerEvent<HTMLSpanElement>, item: Item) {
+    if (event.button !== 0 || rowDragRef.current || dragRef.current) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    prepareRowDrag(event, item, 'label')
   }
 
   function updateRowDrop(x: number, y: number) {
@@ -355,15 +365,18 @@ export default function App() {
     const bounds = board.getBoundingClientRect()
     let drop: RowDrop | null = null
     let targetId: string | null = null
-    if (x >= bounds.left && x <= bounds.left + labelWidth &&
+    if (x >= bounds.left && x <= (drag.source === 'bar' ? bounds.right : bounds.left + labelWidth) &&
       y >= bounds.top + HEADER_HEIGHT && y <= bounds.bottom) {
       const offset = y - body.getBoundingClientRect().top
       const index = Math.floor(offset / ROW_HEIGHT)
       if (index >= 0 && index < drag.rows.length) {
         const target = drag.rows[index]
         targetId = target.item.id
+        const intentX = drag.source === 'bar'
+          ? (target.item.kind === 'group' ? 70 : 33) + target.depth * 17
+          : x - bounds.left
         const candidate = rowDropIntent(
-          drag.items, targetId, target.depth, x - bounds.left, offset / ROW_HEIGHT - index,
+          drag.items, targetId, target.depth, intentX, offset / ROW_HEIGHT - index,
           drag.targetId === targetId ? dropRef.current : null,
         )
         if (!candidate.anchorId || !drag.forbidden.has(candidate.anchorId)) drop = candidate
@@ -410,7 +423,9 @@ export default function App() {
   function positionRowPreview(drag: RowDrag) {
     const preview = rowPreviewRef.current
     if (!preview) return
-    preview.style.transform = `translate3d(${drag.lastX + 15}px, ${drag.lastY - 18}px, 0)`
+    const x = Math.max(8, Math.min(drag.lastX + 15, window.innerWidth - preview.offsetWidth - 8))
+    const y = Math.max(8, Math.min(drag.lastY - 18, window.innerHeight - preview.offsetHeight - 8))
+    preview.style.transform = `translate3d(${x}px, ${y}px, 0)`
     preview.style.visibility = 'visible'
   }
 
@@ -437,7 +452,7 @@ export default function App() {
     setDropTarget(null)
   }
 
-  function endRowDrag(event: ReactPointerEvent<HTMLSpanElement>) {
+  function endRowDrag(event: ReactPointerEvent<HTMLElement>) {
     const drag = rowDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     if (drag.active && drag.planId === workspaceRef.current.activePlanId) {
@@ -447,7 +462,7 @@ export default function App() {
     clearRowDrag()
   }
 
-  function cancelRowDrag(event: ReactPointerEvent<HTMLSpanElement>) {
+  function cancelRowDrag(event: ReactPointerEvent<HTMLElement>) {
     if (rowDragRef.current?.pointerId !== event.pointerId) return
     clearRowDrag()
   }
@@ -515,16 +530,22 @@ export default function App() {
     updateItem(drag.itemId, dragDates(drag.span, drag.mode, delta))
   }
 
-  function startDrag(event: ReactPointerEvent<HTMLDivElement>, item: Item, mode: DragMode) {
-    if (event.button !== 0) return
+  function startDrag(event: ReactPointerEvent<HTMLElement>, item: Item, mode: DragMode) {
+    if (event.button !== 0 || dragRef.current || rowDragRef.current) return
     const span = spans[item.id]
     if (!span) return
     event.stopPropagation()
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = { itemId: item.id, pointerId: event.pointerId, x: event.clientX, delta: 0, mode, span }
+    suppressBarClickRef.current = null
+    dragRef.current = {
+      itemId: item.id, kind: item.kind, pointerId: event.pointerId,
+      x: event.clientX, y: event.clientY, delta: 0, mode,
+      axis: mode === 'move' ? 'pending' : 'horizontal', span,
+    }
+    setDraggingBarId(item.id)
+    if (mode === 'move') prepareRowDrag(event, item, 'bar')
     setHovered(null)
-    setSelectedId(item.id)
   }
 
   function showHover(event: ReactPointerEvent<HTMLElement>, item: Item) {
@@ -567,27 +588,83 @@ export default function App() {
     ))
   }
 
-  function dragMove(event: ReactPointerEvent<HTMLDivElement>) {
+  function dragMove(event: ReactPointerEvent<HTMLElement>) {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
+    if (drag.axis === 'pending') {
+      drag.axis = barDragAxis(drag.kind, event.clientX - drag.x, event.clientY - drag.y)
+      if (drag.axis === 'horizontal') rowDragRef.current = null
+    }
+    if (drag.axis === 'vertical') {
+      const rowDrag = rowDragRef.current
+      if (!rowDrag) return
+      event.preventDefault()
+      rowDrag.lastX = event.clientX
+      rowDrag.lastY = event.clientY
+      if (!rowDrag.active) {
+        rowDrag.active = true
+        setDraggingRowId(drag.itemId)
+      }
+      scheduleRowDragFrame()
+      return
+    }
+    if (drag.axis !== 'horizontal') return
     const delta = Math.round((event.clientX - drag.x) / dayWidth)
     if (delta === drag.delta) return
     drag.delta = delta
     applyDrag(drag, delta)
   }
 
-  function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
+  function endDrag(event: ReactPointerEvent<HTMLElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (drag.axis === 'vertical') endRowDrag(event)
+    else {
+      if (rowDragRef.current?.pointerId === event.pointerId) clearRowDrag()
+      setHovered(null)
+      setSelectedId(drag.itemId)
+    }
+    if (drag.axis !== 'pending') suppressBarClickRef.current = drag.itemId
+    dragRef.current = null
+    setDraggingBarId(null)
   }
 
-  function barKeyDown(event: ReactKeyboardEvent<HTMLDivElement>, item: Item) {
+  function cancelBarDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (dragRef.current?.pointerId !== event.pointerId) return
+    dragRef.current = null
+    setDraggingBarId(null)
+    if (rowDragRef.current?.pointerId === event.pointerId) clearRowDrag()
+  }
+
+  function selectBar(event: ReactMouseEvent<HTMLElement>, item: Item) {
+    if (suppressBarClickRef.current === item.id && event.detail > 0) {
+      event.preventDefault()
+      suppressBarClickRef.current = null
+      return
+    }
+    setHovered(null)
+    setSelectedId(item.id)
+  }
+
+  function barKeyDown(event: ReactKeyboardEvent<HTMLElement>, item: Item) {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveRowInList(item, event.key === 'ArrowUp' ? -1 : 1)
+      return
+    }
+    if (item.kind !== 'task') return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      setSelectedId(item.id)
+      return
+    }
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
     const span = spans[item.id]
     if (!span) return
     applyDrag({
-      itemId: item.id, pointerId: -1, x: 0, delta: 0,
-      mode: event.shiftKey ? 'end' : 'move', span,
+      itemId: item.id, kind: item.kind, pointerId: -1, x: 0, y: 0, delta: 0,
+      mode: event.shiftKey ? 'end' : 'move', axis: 'horizontal', span,
     }, event.key === 'ArrowRight' ? 1 : -1)
   }
 
@@ -780,7 +857,7 @@ export default function App() {
               <span className="timeline-instruction">Type in the last row to add</span>
             </div>
             <div className="chart-toolbar-right">
-              <span className="drag-hint">Drag bars to adjust dates</span>
+              <span className="drag-hint">Drag bars sideways for dates · vertically for order</span>
               <div className="zoom-control" aria-label="Timeline zoom">
                 <button aria-label="Zoom out" disabled={dayWidth <= 28} onClick={() => setDayWidth(Math.max(28, dayWidth - 10))}>−</button>
                 <span>{dayWidth === 28 ? 'Compact' : dayWidth === 48 ? 'Wide' : 'Day'}</span>
@@ -894,23 +971,38 @@ export default function App() {
                       </div>
                       <div className="row-track" style={{ width: timeline.width, backgroundSize: `${dayWidth}px 100%` }}>
                         {span && geometry && (item.kind === 'group'
-                          ? <button className="group-bar" style={{ left: geometry.left, width: geometry.width }} aria-label={`Select group ${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}`} onPointerEnter={(event) => showHover(event, item)} onPointerLeave={() => setHovered(null)} onClick={() => { setHovered(null); setSelectedId(item.id) }} />
-                          : <div
-                              className={`task-bar ${dragRef.current?.itemId === item.id ? 'dragging' : ''}`}
+                          ? <button
+                              className={`group-bar ${draggingBarId === item.id ? 'dragging' : ''}`}
                               style={{ left: geometry.left, width: geometry.width }}
-                              role="button"
-                              tabIndex={0}
-                              aria-label={`${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}. Drag to move; drag edges to resize. Arrow keys move, Shift plus arrow resizes end.`}
+                              aria-label={`Select group ${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}. Drag vertically to reorder or nest. Arrow keys up and down reorder.`}
                               onPointerEnter={(event) => showHover(event, item)}
                               onPointerLeave={() => setHovered(null)}
                               onPointerDown={(event) => startDrag(event, item, 'move')}
                               onPointerMove={dragMove}
                               onPointerUp={endDrag}
-                              onPointerCancel={endDrag}
+                              onPointerCancel={cancelBarDrag}
+                              onLostPointerCapture={cancelBarDrag}
                               onKeyDown={(event) => barKeyDown(event, item)}
+                              onClick={(event) => selectBar(event, item)}
+                            />
+                          : <div
+                              className={`task-bar ${draggingBarId === item.id ? 'dragging' : ''}`}
+                              style={{ left: geometry.left, width: geometry.width }}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}. Drag sideways to move dates, vertically to reorder or nest, or drag edges to resize. Arrow up and down reorder; left and right move dates.`}
+                              onPointerEnter={(event) => showHover(event, item)}
+                              onPointerLeave={() => setHovered(null)}
+                              onPointerDown={(event) => startDrag(event, item, 'move')}
+                              onPointerMove={dragMove}
+                              onPointerUp={endDrag}
+                              onPointerCancel={cancelBarDrag}
+                              onLostPointerCapture={cancelBarDrag}
+                              onKeyDown={(event) => barKeyDown(event, item)}
+                              onClick={(event) => selectBar(event, item)}
                             >
-                              <div className="resize-handle start-handle" role="button" aria-label={`Resize start of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'start')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={endDrag} />
-                              <div className="resize-handle end-handle" role="button" aria-label={`Resize end of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'end')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={endDrag} />
+                              <div className="resize-handle start-handle" role="button" aria-label={`Resize start of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'start')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
+                              <div className="resize-handle end-handle" role="button" aria-label={`Resize end of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'end')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
                             </div>)}
                       </div>
                     </div>
@@ -948,9 +1040,9 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="chart-footer"><span><span className="footer-dot" /> Drag the dotted handles to reorder or nest rows</span><span># creates a group · Right-click or ⌘/Ctrl+Backspace removes a row</span></div>
+          <div className="chart-footer"><span><span className="footer-dot" /> Drag bars or dotted handles to reorder or nest rows</span><span># creates a group · Right-click or ⌘/Ctrl+Backspace removes a row</span></div>
           {draggingRowId && plan.items.filter((item) => item.id === draggingRowId).map((item) => (
-            <div ref={rowPreviewRef} className={`row-drag-preview confidence-${confidenceLevel(item.confidence)}`} key={item.id} aria-hidden="true">
+            <div ref={rowPreviewRef} className={`row-drag-preview confidence-${confidenceLevel(item.confidence)} ${rowDragRef.current?.source === 'bar' ? 'bar-origin' : ''}`} key={item.id} aria-hidden="true">
               <span className="preview-dot" />{item.name || (item.kind === 'group' ? 'Untitled group' : 'Untitled task')}
             </div>
           ))}
@@ -976,7 +1068,7 @@ export default function App() {
             </div>
           )}
         </section>
-        <p className="page-footnote">Type to add or rename rows. Drag the dotted handle onto a group to nest, or left of its children to move out. Right-click a row to remove it; drag bars to change dates.</p>
+        <p className="page-footnote">Type to add or rename rows. Drag bars vertically to reorder or nest, and task bars sideways to change dates. Right-click a row to remove it.</p>
       </main>
 
       {selected && !expanded && (
