@@ -379,18 +379,18 @@ export function parsePlanFile(raw: string): Plan {
   try {
     value = JSON.parse(raw)
   } catch {
-    throw new Error('The selected file is not valid JSON.')
+    throw new Error('The plan content is not valid JSON.')
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('This is not a Threadline plan file.')
+    throw new Error('This is not a Threadline plan.')
   }
   const file = value as { format?: unknown; version?: unknown; plan?: unknown }
-  if (file.format !== PLAN_FILE_FORMAT) throw new Error('This is not a Threadline plan file.')
-  if (file.version !== 1) throw new Error('This Threadline plan file uses an unsupported version.')
+  if (file.format !== PLAN_FILE_FORMAT) throw new Error('This is not a Threadline plan.')
+  if (file.version !== 1) throw new Error('This Threadline plan uses an unsupported version.')
   const imported = file.plan
   if (typeof imported !== 'object' || imported === null || Array.isArray(imported) ||
     !('id' in imported) || typeof imported.id !== 'string') {
-    throw new Error('This Threadline plan file has no valid plan.')
+    throw new Error('This Threadline plan has no valid plan.')
   }
   return parseWorkspace(JSON.stringify({ version: 1, activePlanId: imported.id, plans: [imported] })).plans[0]
 }

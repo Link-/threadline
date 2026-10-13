@@ -10,6 +10,7 @@ import {
   barGeometry, clampLabelWidth, createTimeline, dependencyLinks, downloadFile, exportPng, HEADER_HEIGHT,
   itemDateLabel, LABEL_WIDTH, linkPath, MIN_LABEL_WIDTH, MAX_LABEL_WIDTH, ROW_HEIGHT,
 } from './chart'
+import { AGENT_IMPORT_PROMPT } from './agentPrompt'
 import { Icon } from './Icons'
 
 type Drag = {
@@ -82,6 +83,11 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importMethod, setImportMethod] = useState<'file' | 'paste'>('file')
+  const [pastedPlan, setPastedPlan] = useState('')
+  const [importError, setImportError] = useState<string | null>(null)
+  const [promptCopied, setPromptCopied] = useState(false)
   const [dayWidth, setDayWidth] = useState(38)
   const [labelWidth, setLabelWidth] = useState(LABEL_WIDTH)
   const [exporting, setExporting] = useState(false)
@@ -96,6 +102,9 @@ export default function App() {
   const chartRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLInputElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
+  const importButtonRef = useRef<HTMLButtonElement>(null)
+  const importChooseRef = useRef<HTMLButtonElement>(null)
+  const importDialogRef = useRef<HTMLDialogElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const suppressBarClickRef = useRef<string | null>(null)
   const rowDragRef = useRef<RowDrag | null>(null)
@@ -127,6 +136,19 @@ export default function App() {
       setError(`Could not save to browser storage: ${message(storageError)}`)
     }
   }, [workspace, loadError])
+
+  useEffect(() => {
+    const dialog = importDialogRef.current
+    if (!dialog) return
+    if (importOpen && !dialog.open) {
+      dialog.showModal()
+      importChooseRef.current?.focus()
+    } else if (!importOpen && dialog.open) dialog.close()
+  }, [importOpen])
+
+  useEffect(() => {
+    if (importError) importDialogRef.current?.scrollTo({ top: 0 })
+  }, [importError])
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -710,27 +732,78 @@ export default function App() {
     }
   }
 
+  function closeImport() {
+    setImportOpen(false)
+    setImportMethod('file')
+    setPastedPlan('')
+    setImportError(null)
+    setPromptCopied(false)
+    window.requestAnimationFrame(() => importButtonRef.current?.focus())
+  }
+
+  async function copyAgentPrompt() {
+    if (!navigator.clipboard?.writeText) {
+      setPromptCopied(false)
+      setImportError('Clipboard access is unavailable. Select the instructions below to copy them manually.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(AGENT_IMPORT_PROMPT)
+      setPromptCopied(true)
+      setImportError(null)
+    } catch (copyError) {
+      setPromptCopied(false)
+      setImportError(`Could not copy instructions: ${message(copyError)}. Select the text below to copy manually.`)
+    }
+  }
+
+  function downloadAgentPrompt() {
+    try {
+      downloadFile(new Blob([AGENT_IMPORT_PROMPT], { type: 'text/markdown;charset=utf-8' }), 'threadline-agent-prompt.md')
+      setImportError(null)
+    } catch (downloadError) {
+      setImportError(`Could not download instructions: ${message(downloadError)}`)
+    }
+  }
+
+  function importPlanContents(contents: string) {
+    const imported = parsePlanFile(contents)
+    const id = crypto.randomUUID()
+    const current = workspaceRef.current
+    applyWorkspace({
+      ...current,
+      activePlanId: id,
+      plans: [...current.plans, { ...imported, id }],
+    })
+    setSelectedId(null)
+    setMobileNav(false)
+    setPlanMenu(false)
+    setContextMenu(null)
+    setHovered(null)
+    setDraft('')
+    closeImport()
+  }
+
   async function importPlanFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
     if (!file) return
     try {
-      const imported = parsePlanFile(await file.text())
-      const id = crypto.randomUUID()
-      const current = workspaceRef.current
-      applyWorkspace({
-        ...current,
-        activePlanId: id,
-        plans: [...current.plans, { ...imported, id }],
-      })
-      setSelectedId(null)
-      setMobileNav(false)
-      setPlanMenu(false)
-      setContextMenu(null)
-      setHovered(null)
-      setDraft('')
+      importPlanContents(await file.text())
     } catch (importError) {
-      setError(`Could not import plan: ${message(importError)}`)
+      setImportError(`Could not import plan: ${message(importError)}`)
+    }
+  }
+
+  function importPastedPlan() {
+    if (!pastedPlan.trim()) {
+      setImportError('Paste a Threadline plan JSON object before importing.')
+      return
+    }
+    try {
+      importPlanContents(pastedPlan)
+    } catch (importError) {
+      setImportError(`Could not import plan: ${message(importError)}`)
     }
   }
 
@@ -826,8 +899,11 @@ export default function App() {
           </div>
           <div className="heading-actions">
             <button className="primary-button" onClick={savePlanFile} title="Download this plan as a reusable JSON file"><Icon name="download" size={17} /> Save locally</button>
-            <button className="outline-button" onClick={() => importRef.current?.click()}><Icon name="upload" size={17} /> Import plan</button>
-            <input ref={importRef} type="file" hidden accept=".threadline.json,.json,application/json" aria-label="Choose a Threadline plan file" onChange={importPlanFile} />
+            <button ref={importButtonRef} className="outline-button" onClick={() => {
+              setImportError(null)
+              setPromptCopied(false)
+              setImportOpen(true)
+            }}><Icon name="upload" size={17} /> Import plan</button>
             <button className="outline-button" onClick={downloadChart} disabled={exporting}><Icon name="download" size={17} /> {exporting ? 'Exporting…' : 'Export PNG'}</button>
           </div>
         </div>
@@ -1156,6 +1232,59 @@ export default function App() {
             <div className="detail-bottom"><span>Drag rows to organize. Right-click a row to remove it.</span><span>Saved automatically</span></div>
         </aside>
       )}
+
+      <dialog
+        ref={importDialogRef}
+        className="import-dialog"
+        aria-labelledby="import-dialog-title"
+        aria-describedby="import-dialog-description"
+        aria-modal="true"
+        onCancel={(event) => { event.preventDefault(); closeImport() }}
+      >
+        <div className="import-dialog-header">
+          <div>
+            <h2 id="import-dialog-title">Import a plan</h2>
+            <p id="import-dialog-description">Bring in a Threadline file, or ask an AI agent to create one from your task list.</p>
+          </div>
+          <button className="icon-button" aria-label="Close import dialog" onClick={closeImport}><Icon name="close" size={18} /></button>
+        </div>
+        <div className="import-dialog-body">
+          {importError && <p className="import-error" role="alert">{importError}</p>}
+          <div className="import-method" role="group" aria-label="Import method">
+            <button type="button" className={importMethod === 'file' ? 'active' : ''} aria-pressed={importMethod === 'file'} onClick={() => { setImportMethod('file'); setImportError(null) }}>Upload file</button>
+            <button type="button" className={importMethod === 'paste' ? 'active' : ''} aria-pressed={importMethod === 'paste'} onClick={() => { setImportMethod('paste'); setImportError(null) }}>Paste JSON</button>
+          </div>
+          {importMethod === 'file' ? (
+            <section className="import-section import-upload">
+              <div><h3>Upload a plan file</h3><p>Choose a .threadline.json file. It will open as a new plan without replacing your existing plans.</p></div>
+              <button ref={importChooseRef} className="primary-button" onClick={() => importRef.current?.click()}><Icon name="upload" size={17} /> Choose file</button>
+            </section>
+          ) : (
+            <section className="import-section import-paste">
+              <div><h3>Paste plan JSON</h3><p>Paste the JSON from your agent or a saved Threadline plan. It will open as a new plan.</p></div>
+              <textarea
+                className="import-json-editor"
+                aria-label="Threadline plan JSON"
+                placeholder='{"format":"threadline-plan","version":1,"plan":{...}}'
+                value={pastedPlan}
+                onChange={(event) => { setPastedPlan(event.target.value); setImportError(null) }}
+                spellCheck={false}
+                autoCapitalize="off"
+              />
+              <button className="primary-button" onClick={importPastedPlan}>Import pasted plan</button>
+            </section>
+          )}
+          <input ref={importRef} type="file" hidden accept=".threadline.json,.json,application/json" aria-label="Choose a Threadline plan file" onChange={importPlanFile} />
+          <section className="import-section import-agent">
+            <div><h3>Create a plan with an AI agent</h3><p>Paste your Markdown task list into this prompt, then give it to an agent. Paste its JSON response above or save it as a .threadline.json file to upload.</p></div>
+            <textarea className="import-prompt-preview" aria-label="Agent import instructions" value={AGENT_IMPORT_PROMPT} readOnly spellCheck={false} />
+            <div className="import-prompt-actions">
+              <button className="outline-button" aria-live="polite" onClick={copyAgentPrompt}><Icon name={promptCopied ? 'check' : 'copy'} size={17} /> {promptCopied ? 'Copied' : 'Copy instructions'}</button>
+              <button className="outline-button" onClick={downloadAgentPrompt}><Icon name="download" size={17} /> Download instructions</button>
+            </div>
+          </section>
+        </div>
+      </dialog>
     </div>
   )
 }
