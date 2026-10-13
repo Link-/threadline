@@ -302,7 +302,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .confidence-low { --confidence-color: #cb625b; --confidence-soft: #fbece9; --confidence-text: #a64640; }
 .confidence-unrated { --confidence-color: #90a19a; --confidence-soft: #eef2ef; --confidence-text: #6e8175; }
 .board-row.group-row { background: #f9fbf8; }
-.board-row.selected-row .row-label { background: #eef7ee; }
+.board-row.selected-row .row-label, .board-row:not(.composer-row):focus-within .row-label { background: #eef7ee; }
 .board-row.row-dragging .row-label { opacity: .45; }
 .board-row.row-dragging .task-bar, .board-row.row-dragging .group-bar { opacity: .35; }
 .board-row.drop-inside .row-label { background: #e4f3e8; box-shadow: inset 0 0 0 2px #74b990; }
@@ -357,6 +357,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .row-label:hover .row-detail-button, .row-detail-button:focus-visible { opacity: 1; color: #3b986c; background: #eaf4ec; }
 .row-track { position: relative; flex: 0 0 auto; height: 100%; background-image: linear-gradient(to right, #edf1ec 1px, transparent 1px); }
 .group-row .row-track { background-color: #f9fbf8; }
+.board-row.selected-row .row-track, .board-row:not(.composer-row):focus-within .row-track {
+  background-color: #eef7ee;
+  background-image: linear-gradient(to right, #dce9df 1px, transparent 1px);
+}
 .composer-row { background: #f8fbf8; }
 .composer-label { background: #f8fbf8; }
 .composer-label .row-label-inner { padding-left: 26px; }
