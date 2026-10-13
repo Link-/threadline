@@ -23,3 +23,9 @@ docker run --rm -p 8080:80 threadline
 ```
 
 Open **http://localhost:8080**. Docker must be running. Browser storage is tied to the browser origin: plans at `localhost:5173` and `localhost:8080` are separate, and clearing browser site data removes them.
+
+## GitHub Pages
+
+The **Tests** workflow runs tests and a production build on pushes to `main` and on pull requests. The **Deploy GitHub Pages** workflow tests, builds with relative asset paths, and publishes the static app on pushes to `main` (or when manually run).
+
+To enable deployment, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions** in the repository. After a successful deployment, open **https://link-.github.io/threadline/**. Plans still live only in your browser's storage; this URL has separate storage from the local and Docker URLs.
