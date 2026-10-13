@@ -1295,11 +1295,12 @@ export default function App() {
                       ? allRows.filter(({ item }) => item.id !== selected.id).map(({ item, depth }) => {
                           const checked = selected.dependencies.includes(item.id)
                           const enabled = canDependOn(selected, item.id)
-                          return <label className={`dependency-option ${!enabled ? 'disabled' : ''}`} key={item.id} style={{ paddingLeft: 11 + depth * 13 }} title={!enabled ? 'This link would create a cycle or refers to an empty group' : undefined}>
+                          const name = item.name || 'Untitled'
+                          return <label className={`dependency-option ${!enabled ? 'disabled' : ''}`} key={item.id} style={{ paddingLeft: 11 + depth * 13 }} title={enabled ? name : `${name}\nThis link would create a cycle or refers to an empty group`}>
                             <input type="checkbox" checked={checked} disabled={!enabled} onChange={() => toggleDependency(selected, item.id)} />
                             <span className="checkbox-face"><Icon name="check" size={13} /></span>
                             <Icon name={item.kind === 'group' ? 'folder' : 'tasks'} size={15} />
-                            <span>{item.name || 'Untitled'}</span>
+                            <span>{name}</span>
                           </label>
                         })
                       : <span className="no-dependencies">Add another task to link it here.</span>}
