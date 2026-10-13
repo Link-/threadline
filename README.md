@@ -29,3 +29,7 @@ Open **http://localhost:8080**. Docker must be running. Browser storage is tied 
 The **Tests** workflow runs tests and a production build on pushes to `main` and on pull requests. The **Deploy GitHub Pages** workflow tests, builds with relative asset paths, and publishes the static app on pushes to `main` (or when manually run).
 
 To enable deployment, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions** in the repository. After a successful deployment, open **https://link-.github.io/threadline/**. Plans still live only in your browser's storage; this URL has separate storage from the local and Docker URLs.
+
+## License
+
+Copyright (c) 2026 Link-. All rights reserved. This project is proprietary; see [LICENSE](LICENSE) for restrictions on copying and redistribution.
