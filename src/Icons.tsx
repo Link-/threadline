@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 type IconName = 'plus' | 'chevron' | 'folder' | 'tasks' | 'download' | 'upload' | 'expand' | 'grip' |
   'shrink' | 'close' | 'trash' | 'menu' | 'arrowUp' | 'arrowDown' | 'calendar' | 'link' | 'check' |
-  'sidebarOpen' | 'sidebarClose' | 'copy'
+  'sidebarOpen' | 'sidebarClose' | 'copy' | 'flag'
 
 const shapes: Record<IconName, ReactNode> = {
   plus: <path d="M12 5v14M5 12h14" />,
@@ -22,6 +22,7 @@ const shapes: Record<IconName, ReactNode> = {
   link: <><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1 1" /><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1-1" /></>,
   check: <path d="m4 12 5 5L20 6" />,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
+  flag: <path d="M5 21V4m0 1h13l-3 4 3 4H5" />,
   grip: <><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></>,
   sidebarOpen: <><rect x="2" y="4" width="20" height="16" rx="3" /><path d="M9 4v16m4-11 3 3-3 3" /></>,
   sidebarClose: <><rect x="2" y="4" width="20" height="16" rx="3" /><path d="M9 4v16m8-11-3 3 3 3" /></>,

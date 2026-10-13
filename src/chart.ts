@@ -1,9 +1,8 @@
-import { addDays, confidenceLevel, daysBetween, formatDate, planFileStem, summarizePlan, today } from './model'
-import type { ConfidenceLevel, Plan, Row, Span } from './model'
+import { addDays, confidenceLevel, daysBetween, formatDate, IMPORTANCE_LABELS, MAX_LABEL_WIDTH, MIN_LABEL_WIDTH, planFileStem, summarizePlan, today } from './model'
+import type { ConfidenceLevel, Importance, Plan, Row, Span } from './model'
 
+export { MAX_LABEL_WIDTH, MIN_LABEL_WIDTH } from './model'
 export const LABEL_WIDTH = 320
-export const MIN_LABEL_WIDTH = 180
-export const MAX_LABEL_WIDTH = 1000
 export const HEADER_HEIGHT = 78
 export const ROW_HEIGHT = 54
 const CONFIDENCE_COLORS: Record<ConfidenceLevel, string> = {
@@ -11,6 +10,13 @@ const CONFIDENCE_COLORS: Record<ConfidenceLevel, string> = {
   medium: '#c49128',
   low: '#cb625b',
   unrated: '#90a19a',
+}
+const IMPORTANCE_COLORS: Record<Importance, { background: string; foreground: string }> = {
+  critical: { background: '#fce9e6', foreground: '#ae4139' },
+  investment: { background: '#e7efff', foreground: '#345b99' },
+  debt: { background: '#fff1d7', foreground: '#895d20' },
+  'stretch goal': { background: '#f0eafb', foreground: '#6d51a5' },
+  optional: { background: '#edf2ee', foreground: '#5d7569' },
 }
 
 export type Timeline = {
@@ -210,7 +216,7 @@ function drawClippedText(
   if (width <= 0) return
   let label = text
   while (label.length > 1 && ctx.measureText(label).width > width) label = `${label.slice(0, -2)}…`
-  ctx.fillText(label, x, y)
+  if (ctx.measureText(label).width <= width) ctx.fillText(label, x, y)
 }
 
 export async function exportPng(
@@ -218,8 +224,9 @@ export async function exportPng(
   rows: Row[],
   spans: Record<string, Span | null>,
   timeline: Timeline,
-  labelWidth: number,
+  requestedLabelWidth: number,
 ): Promise<void> {
+  const labelWidth = Math.max(LABEL_WIDTH, requestedLabelWidth)
   const titleHeight = 160
   const width = labelWidth + timeline.width
   const height = titleHeight + HEADER_HEIGHT + Math.max(rows.length, 1) * ROW_HEIGHT + 22
@@ -306,14 +313,33 @@ export async function exportPng(
     }
     ctx.fillStyle = '#e9eeea'
     ctx.fillRect(0, y + ROW_HEIGHT - 1, width, 1)
-    ctx.fillStyle = item.kind === 'group' ? '#254c3c' : '#34463d'
-    ctx.font = `${item.kind === 'group' ? '600' : '500'} 13px system-ui, sans-serif`
-    drawClippedText(ctx, item.name, 23 + depth * 17, y + 32, Math.max(0, labelWidth - 37 - depth * 17 - (item.confidence === null ? 0 : 47)))
+    let textRight = labelWidth - 15
     if (item.confidence !== null) {
       ctx.fillStyle = CONFIDENCE_COLORS[confidenceLevel(item.confidence)]
       ctx.font = '700 10px system-ui, sans-serif'
-      ctx.fillText(`${item.confidence}%`, labelWidth - 42, y + 31)
+      const confidence = `${item.confidence}%`
+      const confidenceWidth = ctx.measureText(confidence).width
+      ctx.fillText(confidence, textRight - confidenceWidth, y + 31)
+      textRight -= confidenceWidth + 10
     }
+    if (item.importance !== null) {
+      const label = IMPORTANCE_LABELS[item.importance]
+      const colors = IMPORTANCE_COLORS[item.importance]
+      ctx.font = '700 10px system-ui, sans-serif'
+      const badgeWidth = Math.ceil(ctx.measureText(label).width) + 12
+      const badgeLeft = textRight - badgeWidth
+      ctx.fillStyle = colors.background
+      ctx.beginPath()
+      ctx.roundRect(badgeLeft, y + 17, badgeWidth, 19, 4)
+      ctx.fill()
+      ctx.fillStyle = colors.foreground
+      ctx.fillText(label, badgeLeft + 6, y + 30)
+      textRight = badgeLeft - 8
+    }
+    ctx.fillStyle = item.kind === 'group' ? '#254c3c' : '#34463d'
+    ctx.font = `${item.kind === 'group' ? '600' : '500'} 13px system-ui, sans-serif`
+    const nameLeft = 23 + depth * 17
+    drawClippedText(ctx, item.name, nameLeft, y + 32, Math.max(0, textRight - nameLeft))
   }
 
   ctx.save()

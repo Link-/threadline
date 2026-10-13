@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, daysBetween, dragDates, flattenItems, isDescendant,
-  parseNewLine, parsePlanFile, parseWorkspace, planFileStem, relocateItem, rowDropIntent, schedulePlan,
-  serializePlan, summarizePlan,
+  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, daysBetween, dragDates, flattenItems,
+  IMPORTANCE_LABELS, IMPORTANCE_OPTIONS, isDescendant, parseImportance, parseNewLine, parsePlanFile,
+  parseWorkspace, planFileStem, relocateItem, rowDropIntent, schedulePlan, serializePlan, summarizePlan,
 } from './model'
 import type { Item, Plan, Workspace } from './model'
 import { barGeometry, clampLabelWidth, createTimeline, dependencyLinks, itemDateLabel, linkPath, linkPoints, ROW_HEIGHT } from './chart'
 
 function task(id: string, start: string, end: string, dependencies: string[] = [], parentId: string | null = null): Item {
-  return { id, name: id, kind: 'task', parentId, start, end, dependencies, collapsed: false, confidence: null }
+  return { id, name: id, kind: 'task', parentId, start, end, dependencies, collapsed: false, confidence: null, importance: null }
 }
 
 function group(id: string, parentId: string | null = null): Item {
@@ -284,7 +284,35 @@ describe('storage and chart layout', () => {
 
     const legacy = JSON.parse(file) as { format: string; version: number; plan: Plan }
     delete (legacy.plan.items[0] as Partial<Item>).confidence
+    delete (legacy.plan.items[0] as Partial<Item>).importance
     expect(parsePlanFile(JSON.stringify(legacy)).items[0].confidence).toBeNull()
+    expect(parsePlanFile(JSON.stringify(legacy)).items[0].importance).toBeNull()
+  })
+
+  it('preserves every importance level in storage and plan files, with no pill value by default', () => {
+    const items = IMPORTANCE_OPTIONS.map((importance, index) => ({
+      ...(index % 2 ? task(String(index), '2026-01-01', '2026-01-03') : group(String(index))),
+      importance,
+    }))
+    const current = plan(items)
+    expect(parseImportance('')).toBeNull()
+    expect(IMPORTANCE_OPTIONS.map((value) => parseImportance(value))).toEqual([...IMPORTANCE_OPTIONS])
+    expect(IMPORTANCE_LABELS['stretch goal']).toBe('Stretch goal')
+    expect(() => parseImportance('urgent')).toThrow('Importance')
+    expect(parsePlanFile(serializePlan(current)).items.map((item) => item.importance)).toEqual([...IMPORTANCE_OPTIONS])
+    const workspace: Workspace = { version: 1, activePlanId: current.id, plans: [current] }
+    expect(parseWorkspace(JSON.stringify(workspace))).toEqual(workspace)
+    expect(createWorkspace().plans[0].items.every((item) => item.importance === null)).toBe(true)
+  })
+
+  it('restores task pane widths independently for each plan and includes them in plan exports', () => {
+    const first = { ...createWorkspace().plans[0], labelWidth: 460 }
+    const second = { ...first, id: 'second-plan', labelWidth: 620 }
+    const workspace: Workspace = { version: 1, activePlanId: first.id, plans: [first, second] }
+    const restored = parseWorkspace(JSON.stringify(workspace))
+    expect(restored.plans.map((entry) => entry.labelWidth)).toEqual([460, 620])
+    expect(parsePlanFile(serializePlan(second)).labelWidth).toBe(620)
+    expect(parsePlanFile(serializePlan({ ...first, labelWidth: undefined })).labelWidth).toBeUndefined()
   })
 
   it('rejects wrong formats, unsupported versions, and invalid imported schedules', () => {
@@ -301,6 +329,16 @@ describe('storage and chart layout', () => {
       plan: { ...original, items: original.items.map((item) => item.kind === 'task'
         ? { ...item, dependencies: ['missing'] } : item) },
     }))).toThrow('missing item')
+    expect(() => parsePlanFile(JSON.stringify({
+      ...file,
+      plan: { ...original, items: [{ ...original.items[0], importance: 'urgent' }, ...original.items.slice(1)] },
+    }))).toThrow('Saved items')
+    for (const labelWidth of ['500', null, 179, 1001, 300.5]) {
+      expect(() => parsePlanFile(JSON.stringify({
+        ...file,
+        plan: { ...original, labelWidth },
+      }))).toThrow('task pane width')
+    }
   })
 
   it('restores plans whose item IDs match inherited object property names', () => {
@@ -331,8 +369,13 @@ describe('storage and chart layout', () => {
     const workspace = createWorkspace()
     expect(parseWorkspace(JSON.stringify(workspace))).toEqual(workspace)
     const legacy = JSON.parse(JSON.stringify(workspace)) as Workspace
-    for (const item of legacy.plans[0].items) delete (item as Partial<Item>).confidence
-    expect(parseWorkspace(JSON.stringify(legacy)).plans[0].items.every((item) => item.confidence === null)).toBe(true)
+    for (const item of legacy.plans[0].items) {
+      delete (item as Partial<Item>).confidence
+      delete (item as Partial<Item>).importance
+    }
+    expect(parseWorkspace(JSON.stringify(legacy)).plans[0].items.every((item) =>
+      item.confidence === null && item.importance === null)).toBe(true)
+    expect(parseWorkspace(JSON.stringify(legacy)).plans[0].labelWidth).toBeUndefined()
     expect(() => parseWorkspace('{"version":2}')).toThrow('unsupported')
     expect(() => parseWorkspace(JSON.stringify({ ...workspace, activePlanId: 'missing' }))).toThrow('selected plan')
     expect(() => parseWorkspace(JSON.stringify({

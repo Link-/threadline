@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, dateNumber, daysBetween, dragDates, flattenItems, formatDate,
-  isDescendant, makeItem, parseNewLine, parsePlanFile, parseWorkspace, planFileStem, relocateItem, rowDropIntent,
-  LEGACY_STORAGE_KEY, schedulePlan, serializePlan, STORAGE_KEY, summarizePlan, today,
+  IMPORTANCE_LABELS, IMPORTANCE_OPTIONS, isDescendant, makeItem, parseImportance, parseNewLine, parsePlanFile,
+  parseWorkspace, planFileStem, relocateItem, rowDropIntent, LEGACY_STORAGE_KEY, schedulePlan, serializePlan,
+  STORAGE_KEY, summarizePlan, today,
 } from './model'
-import type { BarAxis, DragMode, Item, Plan, Row, RowDrop, Span, Workspace } from './model'
+import type { BarAxis, DragMode, Importance, Item, Plan, Row, RowDrop, Span, Workspace } from './model'
 import {
   barGeometry, clampLabelWidth, createTimeline, dependencyLinks, downloadFile, exportPng, HEADER_HEIGHT,
   itemDateLabel, LABEL_WIDTH, linkPath, MIN_LABEL_WIDTH, MAX_LABEL_WIDTH, ROW_HEIGHT,
@@ -39,7 +40,7 @@ type RowDrag = {
   rows: Row[]
   forbidden: Set<string>
 }
-type LabelResize = { pointerId: number; x: number; width: number }
+type LabelResize = { planId: string; pointerId: number; x: number; width: number }
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -47,6 +48,14 @@ function message(error: unknown): string {
 
 function confidenceText(item: Item): string {
   return item.confidence === null ? 'Confidence not set' : `Confidence ${item.confidence}%`
+}
+
+function importanceClass(value: Importance): string {
+  return `importance-${value.replace(' ', '-')}`
+}
+
+function importanceText(item: Item): string {
+  return item.importance === null ? '' : `, importance ${IMPORTANCE_LABELS[item.importance]}`
 }
 
 function sameDrop(a: RowDrop | null, b: RowDrop | null): boolean {
@@ -89,7 +98,8 @@ export default function App() {
   const [importError, setImportError] = useState<string | null>(null)
   const [promptCopied, setPromptCopied] = useState(false)
   const [dayWidth, setDayWidth] = useState(38)
-  const [labelWidth, setLabelWidth] = useState(LABEL_WIDTH)
+  const [labelWidth, setLabelWidth] = useState(() =>
+    initial.workspace.plans.find((entry) => entry.id === initial.workspace.activePlanId)?.labelWidth ?? LABEL_WIDTH)
   const [exporting, setExporting] = useState(false)
   const [draft, setDraft] = useState('')
   const [draggingBarId, setDraggingBarId] = useState<string | null>(null)
@@ -196,11 +206,13 @@ export default function App() {
     const chart = chartRef.current
     if (!chart) return
     const observer = new ResizeObserver(() => {
-      setLabelWidth((width) => clampLabelWidth(width, chart.clientWidth))
+      if (labelResizeRef.current === null) {
+        setLabelWidth(clampLabelWidth(plan.labelWidth ?? LABEL_WIDTH, chart.clientWidth))
+      }
     })
     observer.observe(chart)
     return () => observer.disconnect()
-  }, [loadError])
+  }, [loadError, plan.id, plan.labelWidth])
 
   useEffect(() => () => {
     if (rowFrameRef.current !== null) window.cancelAnimationFrame(rowFrameRef.current)
@@ -212,9 +224,18 @@ export default function App() {
   }, [draggingRowId])
 
   function applyWorkspace(next: Workspace) {
+    if (next.activePlanId !== workspaceRef.current.activePlanId) {
+      labelResizeRef.current = null
+      const active = next.plans.find((entry) => entry.id === next.activePlanId)!
+      setLabelWidth(clampLabelWidth(active.labelWidth ?? LABEL_WIDTH, chartRef.current?.clientWidth ?? window.innerWidth))
+    }
     workspaceRef.current = next
     setWorkspace(next)
     setError(null)
+  }
+
+  function saveLabelWidth(width: number) {
+    if (plan.labelWidth !== width) updatePlan((current) => ({ ...current, labelWidth: width }))
   }
 
   function updatePlan(change: (current: Plan) => Plan): boolean {
@@ -258,6 +279,21 @@ export default function App() {
         if (boardRef.current) boardRef.current.scrollTop = boardRef.current.scrollHeight
       })
     }
+  }
+
+  function addTaskBelow(item: Item) {
+    const next = makeItem('task', item.parentId, spans[item.id]?.start ?? item.start)
+    if (!updatePlan((current) => {
+      const index = current.items.findIndex((entry) => entry.id === item.id)
+      if (index < 0) throw new Error('The task to add after could not be found.')
+      return { ...current, items: [...current.items.slice(0, index + 1), next, ...current.items.slice(index + 1)] }
+    })) return
+    window.requestAnimationFrame(() => {
+      const input = boardBodyRef.current?.querySelector<HTMLInputElement>(`[data-row-id="${next.id}"] .row-title-input`)
+      input?.focus({ preventScroll: true })
+      input?.select()
+      input?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
   }
 
   function changePlan(id: string) {
@@ -587,27 +623,38 @@ export default function App() {
     if (event.button !== 0) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    labelResizeRef.current = { pointerId: event.pointerId, x: event.clientX, width: labelWidth }
+    labelResizeRef.current = { planId: plan.id, pointerId: event.pointerId, x: event.clientX, width: labelWidth }
     setHovered(null)
   }
 
   function moveLabelResize(event: ReactPointerEvent<HTMLDivElement>) {
     const resize = labelResizeRef.current
-    if (resize?.pointerId !== event.pointerId) return
+    if (resize?.pointerId !== event.pointerId || resize.planId !== plan.id) return
     setLabelWidth(clampLabelWidth(resize.width + event.clientX - resize.x, chartRef.current?.clientWidth ?? window.innerWidth))
   }
 
   function endLabelResize(event: ReactPointerEvent<HTMLDivElement>) {
-    if (labelResizeRef.current?.pointerId === event.pointerId) labelResizeRef.current = null
+    const resize = labelResizeRef.current
+    if (resize?.pointerId !== event.pointerId || resize.planId !== plan.id) return
+    labelResizeRef.current = null
+    if (event.type === 'pointercancel') {
+      setLabelWidth(clampLabelWidth(plan.labelWidth ?? LABEL_WIDTH, chartRef.current?.clientWidth ?? window.innerWidth))
+      return
+    }
+    const width = clampLabelWidth(resize.width + event.clientX - resize.x, chartRef.current?.clientWidth ?? window.innerWidth)
+    setLabelWidth(width)
+    saveLabelWidth(width)
   }
 
   function labelResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
-    setLabelWidth((width) => clampLabelWidth(
-      width + (event.key === 'ArrowRight' ? 24 : -24),
+    const width = clampLabelWidth(
+      labelWidth + (event.key === 'ArrowRight' ? 24 : -24),
       chartRef.current?.clientWidth ?? window.innerWidth,
-    ))
+    )
+    setLabelWidth(width)
+    saveLabelWidth(width)
   }
 
   function dragMove(event: ReactPointerEvent<HTMLElement>) {
@@ -851,6 +898,7 @@ export default function App() {
                 className={`plan-entry ${entry.id === plan.id ? 'active' : ''}`}
                 onClick={() => changePlan(entry.id)}
                 aria-current={entry.id === plan.id ? 'page' : undefined}
+                title={entry.name || 'Untitled plan'}
               >
                 <Icon name="folder" size={17} />
                 <span>{entry.name || 'Untitled plan'}</span>
@@ -871,7 +919,7 @@ export default function App() {
           <button className="icon-button mobile-menu" aria-label="Open plans" onClick={() => setMobileNav(true)}>
             <Icon name="menu" />
           </button>
-          <div className="breadcrumbs"><span>Workspace</span><Icon name="chevron" size={13} /><strong>{plan.name || 'Untitled plan'}</strong></div>
+          <div className="breadcrumbs"><span>Workspace</span><Icon name="chevron" size={13} /><strong title={plan.name || 'Untitled plan'}>{plan.name || 'Untitled plan'}</strong></div>
           <div className="topbar-right"><span className="local-badge"><span /> LOCAL WORKSPACE</span></div>
         </header>
 
@@ -881,6 +929,7 @@ export default function App() {
               <input
                 className="plan-title"
                 aria-label="Plan name"
+                title={plan.name || 'Untitled plan'}
                 value={plan.name}
                 onChange={(event) => updatePlan((current) => ({ ...current, name: event.target.value }))}
                 onBlur={() => { if (!plan.name.trim()) updatePlan((current) => ({ ...current, name: 'Untitled plan' })) }}
@@ -924,7 +973,7 @@ export default function App() {
 
         {error && <div className="error-banner" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={() => setError(null)}><Icon name="close" size={16} /></button></div>}
 
-        <section className={`chart-card ${expanded ? 'chart-expanded' : ''}`} ref={chartRef} style={chartStyle} aria-label="Gantt chart">
+        <section className={`chart-card ${expanded ? 'chart-expanded' : ''} ${labelWidth < 275 ? 'compact-labels' : ''}`} ref={chartRef} style={chartStyle} aria-label="Gantt chart">
           <div className="chart-toolbar">
             <div className="chart-toolbar-left">
               <div className="view-icon"><Icon name="calendar" size={17} /></div>
@@ -962,7 +1011,10 @@ export default function App() {
                     onPointerUp={endLabelResize}
                     onPointerCancel={endLabelResize}
                     onKeyDown={labelResizeKeyDown}
-                    onDoubleClick={() => setLabelWidth(clampLabelWidth(LABEL_WIDTH, chartRef.current?.clientWidth ?? window.innerWidth))}
+                    onDoubleClick={() => {
+                      setLabelWidth(clampLabelWidth(LABEL_WIDTH, chartRef.current?.clientWidth ?? window.innerWidth))
+                      saveLabelWidth(LABEL_WIDTH)
+                    }}
                   />
                 </div>
                 <div className="date-header" style={{ width: timeline.width }}>
@@ -1025,10 +1077,14 @@ export default function App() {
                               if ((event.metaKey || event.ctrlKey) && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
                                 event.preventDefault()
                                 moveRowInList(item, event.key === 'ArrowUp' ? -1 : 1, event.currentTarget)
-                              } else if (event.key === 'Enter') {
+                              } else if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
                                 event.preventDefault()
-                                composerRef.current?.focus()
-                                if (boardRef.current) boardRef.current.scrollTop = boardRef.current.scrollHeight
+                                if (event.repeat) return
+                                if (item.kind === 'task') addTaskBelow(item)
+                                else {
+                                  composerRef.current?.focus()
+                                  if (boardRef.current) boardRef.current.scrollTop = boardRef.current.scrollHeight
+                                }
                               } else if (event.key === 'Backspace' && (event.metaKey || event.ctrlKey)) {
                                 event.preventDefault()
                                 deleteItem(item)
@@ -1039,10 +1095,11 @@ export default function App() {
                               setContextMenu({ itemId: item.id, x: Math.min(event.clientX, window.innerWidth - 175), y: Math.min(event.clientY, window.innerHeight - 55) })
                             }}
                           />
+                          {item.importance !== null && <span className={`importance-pill row-importance ${importanceClass(item.importance)}`} aria-label={`Importance: ${IMPORTANCE_LABELS[item.importance]}`} title={`Importance: ${IMPORTANCE_LABELS[item.importance]}`}>{IMPORTANCE_LABELS[item.importance]}</span>}
                           {item.kind === 'group' && <span className="child-count">{childCount}</span>}
                           {item.confidence !== null && <span className="row-confidence" aria-label={confidenceText(item)}>{item.confidence}%</span>}
                           <span className="row-duration">{span ? `${daysBetween(span.start, span.end)}d` : '—'}</span>
-                          <button className="row-detail-button" aria-label={`Edit dates and dependencies for ${item.name}`} title="Dates and dependencies" onClick={() => { setHovered(null); setSelectedId(item.id) }}><Icon name="calendar" size={14} /></button>
+                          <button className="row-detail-button" aria-label={`Edit details for ${item.name}`} title="Item details" onClick={() => { setHovered(null); setSelectedId(item.id) }}><Icon name="calendar" size={14} /></button>
                         </div>
                       </div>
                       <div className="row-track" style={{ width: timeline.width, backgroundSize: `${dayWidth}px 100%` }}>
@@ -1050,7 +1107,7 @@ export default function App() {
                           ? <button
                               className={`group-bar ${draggingBarId === item.id ? 'dragging' : ''}`}
                               style={{ left: geometry.left, width: geometry.width }}
-                              aria-label={`Select group ${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}. Drag vertically to reorder or nest. Arrow keys up and down reorder.`}
+                              aria-label={`Select group ${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}. Drag vertically to reorder or nest. Arrow keys up and down reorder.`}
                               onPointerEnter={(event) => showHover(event, item)}
                               onPointerLeave={() => setHovered(null)}
                               onPointerDown={(event) => startDrag(event, item, 'move')}
@@ -1066,7 +1123,7 @@ export default function App() {
                               style={{ left: geometry.left, width: geometry.width }}
                               role="button"
                               tabIndex={0}
-                              aria-label={`${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}. Drag sideways to move dates, vertically to reorder or nest, or drag edges to resize. Arrow up and down reorder; left and right move dates.`}
+                              aria-label={`${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}. Drag sideways to move dates, vertically to reorder or nest, or drag edges to resize. Arrow up and down reorder; left and right move dates.`}
                               onPointerEnter={(event) => showHover(event, item)}
                               onPointerLeave={() => setHovered(null)}
                               onPointerDown={(event) => startDrag(event, item, 'move')}
@@ -1125,6 +1182,7 @@ export default function App() {
           {hovered && hoveredItem && (
             <div className={`item-tooltip ${hovered.above ? 'above' : ''}`} role="tooltip" style={{ left: hovered.left, top: hovered.top }}>
               <span className="tooltip-name">{hoveredItem.name || 'Untitled'}</span>
+              {hoveredItem.importance !== null && <span className={`importance-pill tooltip-importance ${importanceClass(hoveredItem.importance)}`}>{IMPORTANCE_LABELS[hoveredItem.importance]}</span>}
               <span className={`tooltip-confidence confidence-${confidenceLevel(hoveredItem.confidence)}`}>{confidenceText(hoveredItem)}</span>
               {hoveredSpan ? (
                 <>
@@ -1154,6 +1212,26 @@ export default function App() {
               <div className={`kind-badge ${selected.kind}`}><Icon name={selected.kind === 'group' ? 'folder' : 'tasks'} size={15} /> {selected.kind}</div>
               <h2 className="detail-name">{selected.name || 'Untitled'}</h2>
 
+              <div className="field-divider" />
+              <div className="section-label"><Icon name="flag" size={16} /> Importance</div>
+              <label className="field-label" htmlFor="item-importance">Importance
+                <select
+                  id="item-importance"
+                  className="field-input"
+                  value={selected.importance ?? ''}
+                  onChange={(event) => {
+                    try {
+                      updateItem(selected.id, { importance: parseImportance(event.target.value) })
+                    } catch (importanceError) {
+                      setError(message(importanceError))
+                    }
+                  }}
+                >
+                  <option value="">Not set</option>
+                  {IMPORTANCE_OPTIONS.map((value) => <option value={value} key={value}>{IMPORTANCE_LABELS[value]}</option>)}
+                </select>
+              </label>
+              {selected.importance !== null && <span className={`importance-pill detail-importance ${importanceClass(selected.importance)}`}>{IMPORTANCE_LABELS[selected.importance]}</span>}
               <div className="field-divider" />
               <div className="section-label"><Icon name="check" size={16} /> Confidence</div>
               <div className="confidence-editor">

@@ -9,6 +9,7 @@ describe('agent import instructions', () => {
     const plan = parsePlanFile(sample)
     expect(flattenItems(plan.items).map(({ item, depth }) => [item.name, depth]))
       .toEqual([['Planning', 0], ['Research', 1], ['Outline', 2], ['Build', 0]])
+    expect(plan.items.map((item) => item.importance)).toEqual(['critical', null, 'investment', 'stretch goal'])
     expect(schedulePlan(plan)['task-build']).toEqual({ start: '2026-11-05', end: '2026-11-09' })
   })
 
@@ -17,9 +18,13 @@ describe('agent import instructions', () => {
     expect(AGENT_IMPORT_PROMPT).toContain('- Group: [Group name]')
     expect(AGENT_IMPORT_PROMPT).toContain('Start: [YYYY-MM-DD] | End: [YYYY-MM-DD]')
     expect(AGENT_IMPORT_PROMPT).toContain('"format":"threadline-plan","version":1')
-    for (const field of ['id', 'name', 'kind', 'parentId', 'start', 'end', 'dependencies', 'collapsed', 'confidence']) {
+    for (const field of ['id', 'name', 'kind', 'parentId', 'start', 'end', 'dependencies', 'collapsed', 'confidence', 'importance']) {
       expect(AGENT_IMPORT_PROMPT).toContain(field)
     }
+    for (const value of ['critical', 'investment', 'debt', 'stretch goal', 'optional']) {
+      expect(AGENT_IMPORT_PROMPT).toContain(`"${value}"`)
+    }
+    expect(AGENT_IMPORT_PROMPT).toContain('otherwise null')
     expect(AGENT_IMPORT_PROMPT).toContain('without a code fence or explanation')
     expect(AGENT_IMPORT_PROMPT).toContain('Import plan > Paste JSON')
   })

@@ -78,10 +78,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
   letter-spacing: 0;
   font-size: 10px;
 }
-.plan-list { display: grid; gap: 4px; }
+.plan-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .plan-entry {
   border: 0;
   width: 100%;
+  min-width: 0;
   height: 42px;
   display: flex;
   align-items: center;
@@ -94,7 +95,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
   font-size: 13px;
   font-weight: 600;
 }
-.plan-entry span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.plan-entry span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .plan-entry:hover, .add-plan:hover { background: #e8eee7; }
 .plan-entry.active { background: #dfece3; color: #286d50; }
 .active-pip { width: 6px; height: 6px; border-radius: 50%; background: #4a9c71; flex: 0 0 auto !important; }
@@ -127,14 +128,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 
 .main-content { min-width: 0; min-height: 100dvh; flex: 1; display: flex; flex-direction: column; padding: 0 35px 24px; }
 .topbar { height: 76px; border-bottom: 1px solid #e9ede7; display: flex; align-items: center; justify-content: space-between; }
-.breadcrumbs { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; color: #9baa9e; }
-.breadcrumbs strong { color: #607369; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.breadcrumbs { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; font-size: 12px; color: #9baa9e; }
+.breadcrumbs strong { min-width: 0; color: #607369; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .local-badge { display: flex; align-items: center; gap: 7px; font: 800 10px 'Manrope', sans-serif; letter-spacing: .08em; color: #879b8b; white-space: nowrap; }
 .local-badge span { width: 7px; height: 7px; border-radius: 50%; background: #7dbe88; box-shadow: 0 0 0 3px #e6f4e6; }
 .mobile-menu { display: none !important; }
-.content-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 20px; margin: 34px 0 24px; }
-.heading-title { min-width: 0; }
-.plan-title-wrap { display: flex; align-items: center; gap: 6px; }
+.content-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 20px; margin: 34px 0 24px; }
+.heading-title { min-width: 0; flex: 1 1 600px; max-width: 85%; }
+.plan-title-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .plan-title {
   border: 1px solid transparent;
   border-radius: 7px;
@@ -142,8 +143,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
   background: transparent;
   padding: 3px 5px;
   margin-left: -5px;
-  width: min(420px, 39vw);
-  min-width: 110px;
+  width: 0;
+  min-width: 0;
+  flex: 1 1 auto;
   color: #203c2d;
   font: 800 clamp(24px, 2.4vw, 32px)/1.3 'Manrope', sans-serif;
   letter-spacing: -.055em;
@@ -151,7 +153,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 }
 .plan-title:hover, .plan-title:focus { border-color: #d4e4d7; background: #fff; }
 .heading-title p { margin: 5px 0 0; color: #8b9b8f; font-size: 13px; }
-.plan-menu-wrap { position: relative; }
+.plan-menu-wrap { position: relative; flex: 0 0 auto; }
 .icon-button {
   width: 32px;
   height: 32px;
@@ -168,7 +170,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .popover {
   position: absolute;
   top: 35px;
-  left: 0;
+  right: 0;
   z-index: 20;
   min-width: 160px;
   background: #fff;
@@ -336,6 +338,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .row-title-input:hover { border-color: #dce8dd; background: #fff; }
 .row-title-input:focus { border-color: #89bd9d; background: #fff; outline: none; }
 .group-row .row-title-input { color: #365943; font-weight: 800; }
+.importance-critical { --importance-background: #fce9e6; --importance-foreground: #ae4139; }
+.importance-investment { --importance-background: #e7efff; --importance-foreground: #345b99; }
+.importance-debt { --importance-background: #fff1d7; --importance-foreground: #895d20; }
+.importance-stretch-goal { --importance-background: #f0eafb; --importance-foreground: #6d51a5; }
+.importance-optional { --importance-background: #edf2ee; --importance-foreground: #5d7569; }
+.importance-pill { display: inline-block; padding: 4px 6px; border-radius: 5px; background: var(--importance-background); color: var(--importance-foreground); font: 800 9px/1 'Manrope', sans-serif; white-space: nowrap; }
+.row-importance { flex: 0 1 auto; min-width: 0; max-width: 78px; overflow: hidden; text-overflow: ellipsis; }
+.compact-labels .row-label-inner { gap: 4px; padding-right: 5px; }
+.compact-labels .row-title-input { min-width: 32px; }
+.compact-labels .row-importance { max-width: 56px; }
+.compact-labels .board-corner span:nth-child(2) { display: none; }
+.compact-labels .row-confidence, .compact-labels .row-duration, .compact-labels .child-count { display: none; }
 .child-count { display: grid; place-items: center; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 5px; background: #e6eee6; color: #789278; font-size: 9px; }
 .row-confidence { flex: 0 0 auto; padding: 3px 4px; border-radius: 4px; background: var(--confidence-soft); color: var(--confidence-text); font: 800 9px 'Manrope', sans-serif; }
 .row-duration { font: 700 10px 'Manrope', sans-serif; color: #a4b0a4; flex: 0 0 auto; }
@@ -414,6 +428,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .item-tooltip { position: fixed; z-index: 90; width: min(320px, calc(100vw - 16px)); display: grid; gap: 7px; padding: 12px 14px; border-radius: 9px; background: #234d38; color: #dceee0; box-shadow: 0 7px 22px #1736253d; pointer-events: none; font-size: 10px; }
 .item-tooltip.above { transform: translateY(-100%); }
 .item-tooltip .tooltip-name { color: #fff; font: 700 12px/1.4 'Manrope', sans-serif; overflow-wrap: anywhere; }
+.tooltip-importance { justify-self: start; }
 .tooltip-confidence { display: flex; align-items: center; gap: 6px; color: #dceee0; font-size: 10px; }
 .tooltip-confidence::before { content: ''; width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--confidence-color); }
 .item-tooltip strong { color: #fff; font: 800 15px 'Manrope', sans-serif; }
@@ -432,6 +447,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .confidence-status { min-width: 61px; height: 39px; display: grid; place-items: center; padding: 0 7px; border-radius: 7px; background: var(--confidence-soft); color: var(--confidence-text); font: 800 11px 'Manrope', sans-serif; }
 .confidence-help { margin: 11px 0 0 !important; }
 .detail-name { margin: -10px 0 0; overflow-wrap: anywhere; font: 800 18px/1.4 'Manrope', sans-serif; color: #314e3a; }
+.detail-importance { margin-top: 12px; }
 .field-divider { height: 1px; background: #edf1ec; margin: 25px 0; }
 .section-label { display: flex; align-items: center; gap: 8px; font: 800 12px 'Manrope', sans-serif; color: #3b5945; margin-bottom: 17px; }
 .section-label svg { color: #78a280; }
@@ -509,7 +525,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
   .main-content { padding-left: 23px; padding-right: 23px; }
   .drag-hint { display: none; }
   .content-heading { align-items: flex-start; }
-  .plan-title { width: min(300px, 30vw); }
 }
 @media (max-width: 760px) {
   .app-shell, .app-shell.plans-open { --sidebar-width: 0px; display: block; }
@@ -522,7 +537,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
   .breadcrumbs { flex: 1; }
   .local-badge { font-size: 9px; }
   .content-heading { margin: 27px 0 18px; display: block; }
-  .plan-title { width: min(77vw, 460px); font-size: 26px; }
+  .heading-title { max-width: 100%; }
+  .plan-title { font-size: 26px; }
   .heading-title p { font-size: 11px; }
   .heading-actions { margin-top: 19px; }
   .summary-row { min-height: 57px; height: auto; flex-wrap: wrap; gap: 7px 10px; padding: 9px 13px; margin-bottom: 16px; }

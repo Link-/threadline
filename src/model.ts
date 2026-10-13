@@ -1,5 +1,15 @@
 export type ISODate = string
 
+export const IMPORTANCE_OPTIONS = ['critical', 'investment', 'debt', 'stretch goal', 'optional'] as const
+export type Importance = typeof IMPORTANCE_OPTIONS[number]
+export const IMPORTANCE_LABELS: Record<Importance, string> = {
+  critical: 'Critical',
+  investment: 'Investment',
+  debt: 'Debt',
+  'stretch goal': 'Stretch goal',
+  optional: 'Optional',
+}
+
 export type Item = {
   id: string
   name: string
@@ -10,13 +20,18 @@ export type Item = {
   dependencies: string[]
   collapsed: boolean
   confidence: number | null
+  importance: Importance | null
 }
 
 export type Plan = {
   id: string
   name: string
   items: Item[]
+  labelWidth?: number
 }
+
+export const MIN_LABEL_WIDTH = 180
+export const MAX_LABEL_WIDTH = 1000
 
 export type Workspace = {
   version: 1
@@ -92,6 +107,13 @@ export function confidenceLevel(value: number | null): ConfidenceLevel {
     throw new Error('Confidence must be a whole number from 0 to 100.')
   }
   return value > 90 ? 'high' : value >= 70 ? 'medium' : 'low'
+}
+
+export function parseImportance(value: string): Importance | null {
+  if (value === '') return null
+  const importance = IMPORTANCE_OPTIONS.find((option) => option === value)
+  if (!importance) throw new Error('Importance must be critical, investment, debt, stretch goal, or optional.')
+  return importance
 }
 
 export function flattenItems(items: Item[], respectCollapsed = true): Row[] {
@@ -308,6 +330,7 @@ export function makeItem(kind: Item['kind'], parentId: string | null = null, sta
     dependencies: [],
     collapsed: false,
     confidence: null,
+    importance: null,
   }
 }
 
@@ -343,6 +366,10 @@ export function parseWorkspace(raw: string): Workspace {
     if (!plan || typeof plan.id !== 'string' || typeof plan.name !== 'string' || !Array.isArray(plan.items)) {
       throw new Error('A saved plan is invalid.')
     }
+    if (plan.labelWidth !== undefined &&
+      (!Number.isInteger(plan.labelWidth) || plan.labelWidth < MIN_LABEL_WIDTH || plan.labelWidth > MAX_LABEL_WIDTH)) {
+      throw new Error(`The task pane width in "${plan.name}" is invalid.`)
+    }
     for (const item of plan.items) {
       if (!item || typeof item.id !== 'string' || typeof item.name !== 'string' ||
         (item.kind !== 'task' && item.kind !== 'group') ||
@@ -352,11 +379,15 @@ export function parseWorkspace(raw: string): Workspace {
         typeof item.collapsed !== 'boolean' ||
         (item.confidence !== undefined && item.confidence !== null &&
           (typeof item.confidence !== 'number' || !Number.isInteger(item.confidence) ||
-            item.confidence < 0 || item.confidence > 100))) {
+            item.confidence < 0 || item.confidence > 100)) ||
+        (item.importance !== undefined && item.importance !== null &&
+          !IMPORTANCE_OPTIONS.some((option) => option === item.importance))) {
         throw new Error(`Saved items in "${plan.name}" are invalid.`)
       }
     }
-    schedulePlan({ ...plan, items: plan.items.map((item) => ({ ...item, confidence: item.confidence ?? null })) })
+    schedulePlan({ ...plan, items: plan.items.map((item) => ({
+      ...item, confidence: item.confidence ?? null, importance: item.importance ?? null,
+    })) })
   }
   if (!data.plans.some((plan) => plan.id === data.activePlanId)) throw new Error('The selected plan could not be found.')
   return {
@@ -364,7 +395,9 @@ export function parseWorkspace(raw: string): Workspace {
     activePlanId: data.activePlanId,
     plans: data.plans.map((plan) => ({
       ...plan,
-      items: plan.items.map((item) => ({ ...item, confidence: item.confidence ?? null })),
+      items: plan.items.map((item) => ({
+        ...item, confidence: item.confidence ?? null, importance: item.importance ?? null,
+      })),
     })),
   }
 }
