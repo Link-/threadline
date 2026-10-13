@@ -50,11 +50,11 @@ describe('plan summary', () => {
   it('shows elapsed calendar days across all scheduled tasks, including nested and dependent tasks', () => {
     const items: Item[] = [
       { id: 'group', name: 'Group', kind: 'group', parentId: null,
-        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: true, confidence: null, importance: null },
+        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: true, confidence: null, importance: null, completed: false },
       { id: 'first', name: 'First', kind: 'task', parentId: 'group',
-        start: '2026-01-01', end: '2026-01-02', dependencies: [], collapsed: false, confidence: null, importance: null },
+        start: '2026-01-01', end: '2026-01-02', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false },
       { id: 'last', name: 'Last', kind: 'task', parentId: null,
-        start: '2026-01-02', end: '2026-01-05', dependencies: ['first'], collapsed: false, confidence: null, importance: null },
+        start: '2026-01-02', end: '2026-01-05', dependencies: ['first'], collapsed: false, confidence: null, importance: null, completed: false },
     ]
     const html = renderPlan(items)
     expect(html).toContain('Jan 1 – Jan 6, 2026')
@@ -81,21 +81,42 @@ describe('plan summary', () => {
   it('renders importance pills only on items with a defined importance', () => {
     const html = renderPlan([
       { id: 'group', name: 'Group', kind: 'group', parentId: null,
-        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: false, confidence: null, importance: 'critical' },
+        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: false, confidence: 85, importance: 'critical', completed: false },
       { id: 'task', name: 'Task', kind: 'task', parentId: 'group',
-        start: '2026-01-01', end: '2026-01-02', dependencies: [], collapsed: false, confidence: null, importance: 'stretch goal' },
+        start: '2026-01-01', end: '2026-01-02', dependencies: [], collapsed: false, confidence: 75, importance: 'stretch goal', completed: false },
       { id: 'unset', name: 'Unset', kind: 'task', parentId: null,
-        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: false, confidence: null, importance: null },
+        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false },
     ])
-    expect(html).toContain('importance-pill row-importance importance-critical')
-    expect(html).toContain('importance-pill row-importance importance-stretch-goal')
+    expect(html).toContain('importance-pill row-importance row-property importance-critical')
+    expect(html).toContain('importance-pill row-importance row-property importance-stretch-goal')
     expect(html.match(/importance-pill row-importance/g)).toHaveLength(2)
+    expect(html).toContain('Edit importance of Group: Critical')
+    expect(html).toContain('Edit confidence of Task: 75%')
+    expect(html).toContain('Edit duration of Task')
+    expect(html).toContain('<span class="child-count">1</span>')
+  })
+
+  it('marks completed tasks in the row and timeline but leaves groups and other tasks unmarked', () => {
+    const html = renderPlan([
+      { id: 'group', name: 'Phase', kind: 'group', parentId: null,
+        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false },
+      { id: 'done', name: 'Finished', kind: 'task', parentId: 'group',
+        start: '2026-01-01', end: '2026-01-02', dependencies: [], collapsed: false, confidence: null, importance: null, completed: true },
+      { id: 'open', name: 'Open', kind: 'task', parentId: null,
+        start: '2026-01-02', end: '2026-01-03', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false },
+    ])
+    expect(html).toContain('completed-row')
+    expect(html).toContain('aria-checked="true"')
+    expect(html).toContain('aria-checked="false"')
+    expect(html).toContain('Mark Finished as not done')
+    expect(html).toContain('task-bar completed')
+    expect(html.match(/task-bar completed/g)).toHaveLength(1)
   })
 
   it('loads saved Daymark plans when the Threadline storage key has not been written yet', () => {
     const item: Item = {
       id: 'saved', name: 'Saved task', kind: 'task', parentId: null,
-      start: '2026-01-01', end: '2026-01-03', dependencies: [], collapsed: false, confidence: null, importance: null,
+      start: '2026-01-01', end: '2026-01-03', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false,
     }
     const html = renderPlan([item], LEGACY_STORAGE_KEY)
     expect(html).toContain('Saved task')

@@ -21,6 +21,7 @@ export type Item = {
   collapsed: boolean
   confidence: number | null
   importance: Importance | null
+  completed: boolean
 }
 
 export type Plan = {
@@ -230,6 +231,8 @@ export function schedulePlan(plan: Plan): Record<string, Span | null> {
 
   for (const item of items) {
     confidenceLevel(item.confidence)
+    if (typeof item.completed !== 'boolean') throw new Error('Task completion must be true or false.')
+    if (item.kind === 'group' && item.completed) throw new Error('Only tasks can be marked as done.')
     if (item.parentId !== null) {
       const parent = byId.get(item.parentId)
       if (!parent || parent.kind !== 'group') throw new Error(`"${item.name}" has an invalid parent group.`)
@@ -331,6 +334,7 @@ export function makeItem(kind: Item['kind'], parentId: string | null = null, sta
     collapsed: false,
     confidence: null,
     importance: null,
+    completed: false,
   }
 }
 
@@ -381,12 +385,15 @@ export function parseWorkspace(raw: string): Workspace {
           (typeof item.confidence !== 'number' || !Number.isInteger(item.confidence) ||
             item.confidence < 0 || item.confidence > 100)) ||
         (item.importance !== undefined && item.importance !== null &&
-          !IMPORTANCE_OPTIONS.some((option) => option === item.importance))) {
+          !IMPORTANCE_OPTIONS.some((option) => option === item.importance)) ||
+        (item.completed !== undefined && typeof item.completed !== 'boolean') ||
+        (item.kind === 'group' && item.completed === true)) {
         throw new Error(`Saved items in "${plan.name}" are invalid.`)
       }
     }
     schedulePlan({ ...plan, items: plan.items.map((item) => ({
       ...item, confidence: item.confidence ?? null, importance: item.importance ?? null,
+      completed: item.completed ?? false,
     })) })
   }
   if (!data.plans.some((plan) => plan.id === data.activePlanId)) throw new Error('The selected plan could not be found.')
@@ -397,6 +404,7 @@ export function parseWorkspace(raw: string): Workspace {
       ...plan,
       items: plan.items.map((item) => ({
         ...item, confidence: item.confidence ?? null, importance: item.importance ?? null,
+        completed: item.completed ?? false,
       })),
     })),
   }

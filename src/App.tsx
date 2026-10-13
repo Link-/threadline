@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
-  adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, dateNumber, daysBetween, dragDates, flattenItems, formatDate,
+  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, dateNumber, daysBetween, dragDates, flattenItems, formatDate,
   IMPORTANCE_LABELS, IMPORTANCE_OPTIONS, isDescendant, makeItem, parseImportance, parseNewLine, parsePlanFile,
   parseWorkspace, planFileStem, relocateItem, rowDropIntent, LEGACY_STORAGE_KEY, schedulePlan, serializePlan,
   STORAGE_KEY, summarizePlan, today,
@@ -102,6 +102,7 @@ export default function App() {
     initial.workspace.plans.find((entry) => entry.id === initial.workspace.activePlanId)?.labelWidth ?? LABEL_WIDTH)
   const [exporting, setExporting] = useState(false)
   const [draft, setDraft] = useState('')
+  const [durationDraft, setDurationDraft] = useState<{ itemId: string; value: string } | null>(null)
   const [draggingBarId, setDraggingBarId] = useState<string | null>(null)
   const [draggingRowId, setDraggingRowId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<RowDrop | null>(null)
@@ -115,6 +116,7 @@ export default function App() {
   const importButtonRef = useRef<HTMLButtonElement>(null)
   const importChooseRef = useRef<HTMLButtonElement>(null)
   const importDialogRef = useRef<HTMLDialogElement>(null)
+  const detailPanelRef = useRef<HTMLElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const suppressBarClickRef = useRef<string | null>(null)
   const rowDragRef = useRef<RowDrag | null>(null)
@@ -260,6 +262,16 @@ export default function App() {
       ...current,
       items: current.items.map((item) => item.id === id ? { ...item, ...changes } : item),
     }))
+  }
+
+  async function editRowProperty(item: Item, field: 'importance' | 'confidence' | 'duration') {
+    if (expanded) await toggleExpanded()
+    setHovered(null)
+    setSelectedId(item.id)
+    window.requestAnimationFrame(() => {
+      const panel = detailPanelRef.current
+      if (panel?.dataset.itemId === item.id) panel.querySelector<HTMLElement>(`#item-${field}`)?.focus()
+    })
   }
 
   function commitDraft() {
@@ -581,6 +593,23 @@ export default function App() {
       updateItem(item.id, { start: value, end: item.end < value ? value : item.end })
     } else {
       updateItem(item.id, { end: value, start: item.start > value ? value : item.start })
+    }
+  }
+
+  function changeDuration(item: Item, value: string) {
+    setDurationDraft({ itemId: item.id, value })
+    if (!value) return
+    const days = Number(value)
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(days)) {
+      setError('Duration must be a non-negative whole number of days.')
+      return
+    }
+    try {
+      const end = addDays(item.start, days)
+      dateNumber(end)
+      updateItem(item.id, { end })
+    } catch (durationError) {
+      setError(message(durationError))
     }
   }
 
@@ -1042,7 +1071,7 @@ export default function App() {
                   const childCount = plan.items.filter((entry) => entry.parentId === item.id).length
                   return (
                     <div
-                      className={`board-row confidence-${confidenceLevel(item.confidence)} ${item.kind === 'group' ? 'group-row' : ''} ${selectedId === item.id ? 'selected-row' : ''} ${draggingRowId === item.id ? 'row-dragging' : ''} ${dropTarget?.anchorId === item.id ? `drop-${dropTarget.placement}` : ''}`}
+                      className={`board-row confidence-${confidenceLevel(item.confidence)} ${item.kind === 'group' ? 'group-row' : ''} ${item.completed ? 'completed-row' : ''} ${selectedId === item.id ? 'selected-row' : ''} ${draggingRowId === item.id ? 'row-dragging' : ''} ${dropTarget?.anchorId === item.id ? `drop-${dropTarget.placement}` : ''}`}
                       style={{ height: ROW_HEIGHT }}
                       key={item.id}
                       data-row-id={item.id}
@@ -1065,7 +1094,15 @@ export default function App() {
                           ><Icon name="grip" size={15} /></span>
                           {item.kind === 'group'
                             ? <button className={`collapse-button ${item.collapsed ? 'collapsed' : ''}`} aria-label={`${item.collapsed ? 'Expand' : 'Collapse'} ${item.name}`} onClick={() => updateItem(item.id, { collapsed: !item.collapsed })}><Icon name="chevron" size={15} /></button>
-                            : <span className="task-dot" />}
+                            : <button
+                                type="button"
+                                role="checkbox"
+                                aria-checked={item.completed}
+                                aria-label={`Mark ${item.name || 'Untitled task'} as ${item.completed ? 'not done' : 'done'}`}
+                                title={item.completed ? 'Mark as not done' : 'Mark as done'}
+                                className={`task-completion ${item.completed ? 'is-complete' : ''}`}
+                                onClick={() => updateItem(item.id, { completed: !item.completed })}
+                              ><Icon name="check" size={13} /></button>}
                           <input
                             className="row-title-input"
                             aria-label={`${item.kind === 'group' ? 'Group' : 'Task'} name`}
@@ -1095,10 +1132,30 @@ export default function App() {
                               setContextMenu({ itemId: item.id, x: Math.min(event.clientX, window.innerWidth - 175), y: Math.min(event.clientY, window.innerHeight - 55) })
                             }}
                           />
-                          {item.importance !== null && <span className={`importance-pill row-importance ${importanceClass(item.importance)}`} aria-label={`Importance: ${IMPORTANCE_LABELS[item.importance]}`} title={`Importance: ${IMPORTANCE_LABELS[item.importance]}`}>{IMPORTANCE_LABELS[item.importance]}</span>}
+                          {item.importance !== null && <button
+                            type="button"
+                            className={`importance-pill row-importance row-property ${importanceClass(item.importance)}`}
+                            aria-label={`Edit importance of ${item.name}: ${IMPORTANCE_LABELS[item.importance]}`}
+                            title="Edit importance"
+                            onClick={() => { void editRowProperty(item, 'importance') }}
+                          >{IMPORTANCE_LABELS[item.importance]}</button>}
                           {item.kind === 'group' && <span className="child-count">{childCount}</span>}
-                          {item.confidence !== null && <span className="row-confidence" aria-label={confidenceText(item)}>{item.confidence}%</span>}
-                          <span className="row-duration">{span ? `${daysBetween(span.start, span.end)}d` : '—'}</span>
+                          {item.confidence !== null && <button
+                            type="button"
+                            className="row-confidence row-property"
+                            aria-label={`Edit confidence of ${item.name}: ${item.confidence}%`}
+                            title="Edit confidence"
+                            onClick={() => { void editRowProperty(item, 'confidence') }}
+                          >{item.confidence}%</button>}
+                          {item.kind === 'task'
+                            ? <button
+                                type="button"
+                                className="row-duration row-property"
+                                aria-label={`Edit duration of ${item.name}`}
+                                title="Edit duration"
+                                onClick={() => { void editRowProperty(item, 'duration') }}
+                              >{span ? `${daysBetween(span.start, span.end)}d` : '—'}</button>
+                            : <span className="row-duration">{span ? `${daysBetween(span.start, span.end)}d` : '—'}</span>}
                           <button className="row-detail-button" aria-label={`Edit details for ${item.name}`} title="Item details" onClick={() => { setHovered(null); setSelectedId(item.id) }}><Icon name="calendar" size={14} /></button>
                         </div>
                       </div>
@@ -1119,11 +1176,11 @@ export default function App() {
                               onClick={(event) => selectBar(event, item)}
                             />
                           : <div
-                              className={`task-bar ${draggingBarId === item.id ? 'dragging' : ''}`}
+                              className={`task-bar ${item.completed ? 'completed' : ''} ${draggingBarId === item.id ? 'dragging' : ''}`}
                               style={{ left: geometry.left, width: geometry.width }}
                               role="button"
                               tabIndex={0}
-                              aria-label={`${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}. Drag sideways to move dates, vertically to reorder or nest, or drag edges to resize. Arrow up and down reorder; left and right move dates.`}
+                              aria-label={`${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}${item.completed ? ', done' : ''}. Drag sideways to move dates, vertically to reorder or nest, or drag edges to resize. Arrow up and down reorder; left and right move dates.`}
                               onPointerEnter={(event) => showHover(event, item)}
                               onPointerLeave={() => setHovered(null)}
                               onPointerDown={(event) => startDrag(event, item, 'move')}
@@ -1134,6 +1191,7 @@ export default function App() {
                               onKeyDown={(event) => barKeyDown(event, item)}
                               onClick={(event) => selectBar(event, item)}
                             >
+                              {item.completed && <span className="bar-completion"><Icon name="check" size={13} /></span>}
                               <div className="resize-handle start-handle" role="button" aria-label={`Resize start of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'start')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
                               <div className="resize-handle end-handle" role="button" aria-label={`Resize end of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'end')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
                             </div>)}
@@ -1182,6 +1240,7 @@ export default function App() {
           {hovered && hoveredItem && (
             <div className={`item-tooltip ${hovered.above ? 'above' : ''}`} role="tooltip" style={{ left: hovered.left, top: hovered.top }}>
               <span className="tooltip-name">{hoveredItem.name || 'Untitled'}</span>
+              {hoveredItem.kind === 'task' && hoveredItem.completed && <span className="tooltip-done"><Icon name="check" size={12} /> Done</span>}
               {hoveredItem.importance !== null && <span className={`importance-pill tooltip-importance ${importanceClass(hoveredItem.importance)}`}>{IMPORTANCE_LABELS[hoveredItem.importance]}</span>}
               <span className={`tooltip-confidence confidence-${confidenceLevel(hoveredItem.confidence)}`}>{confidenceText(hoveredItem)}</span>
               {hoveredSpan ? (
@@ -1206,11 +1265,15 @@ export default function App() {
       </main>
 
       {selected && !expanded && (
-        <aside className="detail-panel" aria-label={`${selected.kind} details`}>
+        <aside className="detail-panel" ref={detailPanelRef} data-item-id={selected.id} aria-label={`${selected.kind} details`}>
             <div className="detail-top"><span>ITEM DETAILS</span><button className="icon-button" aria-label="Close details" onClick={() => setSelectedId(null)}><Icon name="close" size={18} /></button></div>
             <div className="detail-content">
               <div className={`kind-badge ${selected.kind}`}><Icon name={selected.kind === 'group' ? 'folder' : 'tasks'} size={15} /> {selected.kind}</div>
               <h2 className="detail-name">{selected.name || 'Untitled'}</h2>
+              {selected.kind === 'task' && <label className="detail-completion">
+                <input type="checkbox" checked={selected.completed} onChange={(event) => updateItem(selected.id, { completed: event.target.checked })} />
+                Task done
+              </label>}
 
               <div className="field-divider" />
               <div className="section-label"><Icon name="flag" size={16} /> Importance</div>
@@ -1270,9 +1333,26 @@ export default function App() {
               {selected.kind === 'task' ? (
                 <>
                   <div className="section-label"><Icon name="calendar" size={16} /> Schedule</div>
+                  <label className="field-label duration-field" htmlFor="item-duration">Duration (calendar days)
+                    <input
+                      id="item-duration"
+                      type="number"
+                      min={0}
+                      step={1}
+                      inputMode="numeric"
+                      className="field-input"
+                      value={durationDraft?.itemId === selected.id ? durationDraft.value : daysBetween(selected.start, selected.end)}
+                      onChange={(event) => changeDuration(selected, event.target.value)}
+                      onBlur={(event) => {
+                        if (event.currentTarget.value === '') setError('Duration must be a non-negative whole number of days.')
+                        setDurationDraft(null)
+                      }}
+                    />
+                  </label>
+                  <p className="field-help duration-help">Changing duration keeps the start date fixed and moves the end date.</p>
                   <div className="date-fields">
                     <label className="field-label">Start date<input type="date" className="field-input" value={selected.start} onChange={(event) => changeDate(selected, 'start', event.target.value)} /></label>
-                    <label className="field-label">End date<input type="date" className="field-input" value={selected.end} onChange={(event) => changeDate(selected, 'end', event.target.value)} /></label>
+                    <label className="field-label">End date<input id="item-end" type="date" className="field-input" value={selected.end} onChange={(event) => changeDate(selected, 'end', event.target.value)} /></label>
                   </div>
                   {spans[selected.id] && (
                     <div className="schedule-note">

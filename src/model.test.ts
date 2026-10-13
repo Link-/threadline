@@ -8,7 +8,7 @@ import type { Item, Plan, Workspace } from './model'
 import { barGeometry, clampLabelWidth, createTimeline, dependencyLinks, itemDateLabel, linkPath, linkPoints, ROW_HEIGHT } from './chart'
 
 function task(id: string, start: string, end: string, dependencies: string[] = [], parentId: string | null = null): Item {
-  return { id, name: id, kind: 'task', parentId, start, end, dependencies, collapsed: false, confidence: null, importance: null }
+  return { id, name: id, kind: 'task', parentId, start, end, dependencies, collapsed: false, confidence: null, importance: null, completed: false }
 }
 
 function group(id: string, parentId: string | null = null): Item {
@@ -36,6 +36,21 @@ describe('date semantics', () => {
     expect(spans.a).toEqual({ start: '2026-01-01', end: '2026-01-03' })
     expect(spans.b).toEqual({ start: '2026-01-04', end: '2026-01-07' })
     expect(spans.c).toEqual({ start: '2026-01-08', end: '2026-01-08' })
+  })
+
+  it('resizes a dependent task from its fixed planned start and reschedules successors', () => {
+    const predecessor = task('first', '2026-01-01', '2026-01-05')
+    const dependent = task('second', '2026-01-02', '2026-01-04', ['first'])
+    const successor = task('third', '2026-01-03', '2026-01-03', ['second'])
+    const resized = { ...dependent, end: addDays(dependent.start, 4) }
+    const spans = schedulePlan(plan([predecessor, resized, successor]))
+
+    expect(resized.start).toBe('2026-01-02')
+    expect(resized.end).toBe('2026-01-06')
+    expect(spans.second).toEqual({ start: '2026-01-06', end: '2026-01-10' })
+    expect(spans.third).toEqual({ start: '2026-01-11', end: '2026-01-11' })
+    expect(schedulePlan(plan([predecessor, { ...dependent, end: dependent.start }, successor])).second)
+      .toEqual({ start: '2026-01-06', end: '2026-01-06' })
   })
 
   it('moves or resizes inclusive bars without allowing a negative duration', () => {
@@ -285,8 +300,22 @@ describe('storage and chart layout', () => {
     const legacy = JSON.parse(file) as { format: string; version: number; plan: Plan }
     delete (legacy.plan.items[0] as Partial<Item>).confidence
     delete (legacy.plan.items[0] as Partial<Item>).importance
+    delete (legacy.plan.items[0] as Partial<Item>).completed
     expect(parsePlanFile(JSON.stringify(legacy)).items[0].confidence).toBeNull()
     expect(parsePlanFile(JSON.stringify(legacy)).items[0].importance).toBeNull()
+    expect(parsePlanFile(JSON.stringify(legacy)).items[0].completed).toBe(false)
+  })
+
+  it('round-trips done tasks without changing their dates or dependency scheduling', () => {
+    const first = { ...task('first', '2026-01-01', '2026-01-02'), completed: true }
+    const dependent = task('dependent', '2026-01-01', '2026-01-03', ['first'])
+    const current = plan([group('phase'), { ...first, parentId: 'phase' }, dependent])
+    const workspace: Workspace = { version: 1, activePlanId: current.id, plans: [current] }
+    expect(parseWorkspace(JSON.stringify(workspace))).toEqual(workspace)
+    expect(parsePlanFile(serializePlan(current)).items.map((item) => item.completed)).toEqual([false, true, false])
+    expect(schedulePlan(current).dependent).toEqual(schedulePlan(plan([
+      group('phase'), { ...first, parentId: 'phase', completed: false }, dependent,
+    ])).dependent)
   })
 
   it('preserves every importance level in storage and plan files, with no pill value by default', () => {
@@ -333,6 +362,14 @@ describe('storage and chart layout', () => {
       ...file,
       plan: { ...original, items: [{ ...original.items[0], importance: 'urgent' }, ...original.items.slice(1)] },
     }))).toThrow('Saved items')
+    expect(() => parsePlanFile(JSON.stringify({
+      ...file,
+      plan: { ...original, items: [{ ...original.items[0], completed: true }, ...original.items.slice(1)] },
+    }))).toThrow('Saved items')
+    expect(() => parsePlanFile(JSON.stringify({
+      ...file,
+      plan: { ...original, items: [{ ...original.items[0], completed: 'yes' }, ...original.items.slice(1)] },
+    }))).toThrow('Saved items')
     for (const labelWidth of ['500', null, 179, 1001, 300.5]) {
       expect(() => parsePlanFile(JSON.stringify({
         ...file,
@@ -372,9 +409,10 @@ describe('storage and chart layout', () => {
     for (const item of legacy.plans[0].items) {
       delete (item as Partial<Item>).confidence
       delete (item as Partial<Item>).importance
+      delete (item as Partial<Item>).completed
     }
     expect(parseWorkspace(JSON.stringify(legacy)).plans[0].items.every((item) =>
-      item.confidence === null && item.importance === null)).toBe(true)
+      item.confidence === null && item.importance === null && item.completed === false)).toBe(true)
     expect(parseWorkspace(JSON.stringify(legacy)).plans[0].labelWidth).toBeUndefined()
     expect(() => parseWorkspace('{"version":2}')).toThrow('unsupported')
     expect(() => parseWorkspace(JSON.stringify({ ...workspace, activePlanId: 'missing' }))).toThrow('selected plan')

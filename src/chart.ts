@@ -219,6 +219,20 @@ function drawClippedText(
   if (ctx.measureText(label).width <= width) ctx.fillText(label, x, y)
 }
 
+function drawDoneMark(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = '#398d6c'
+  ctx.beginPath()
+  ctx.roundRect(x, y, 14, 14, 3)
+  ctx.fill()
+  ctx.strokeStyle = '#fff'
+  ctx.lineWidth = 1.8
+  ctx.beginPath()
+  ctx.moveTo(x + 3, y + 7)
+  ctx.lineTo(x + 6, y + 10)
+  ctx.lineTo(x + 11, y + 4)
+  ctx.stroke()
+}
+
 export async function exportPng(
   plan: Plan,
   rows: Row[],
@@ -336,9 +350,13 @@ export async function exportPng(
       ctx.fillText(label, badgeLeft + 6, y + 30)
       textRight = badgeLeft - 8
     }
-    ctx.fillStyle = item.kind === 'group' ? '#254c3c' : '#34463d'
     ctx.font = `${item.kind === 'group' ? '600' : '500'} 13px system-ui, sans-serif`
-    const nameLeft = 23 + depth * 17
+    let nameLeft = 23 + depth * 17
+    if (item.completed) {
+      drawDoneMark(ctx, nameLeft, y + 20)
+      nameLeft += 20
+    }
+    ctx.fillStyle = item.completed ? '#819589' : item.kind === 'group' ? '#254c3c' : '#34463d'
     drawClippedText(ctx, item.name, nameLeft, y + 32, Math.max(0, textRight - nameLeft))
   }
 
@@ -372,11 +390,12 @@ export async function exportPng(
     const y = index * ROW_HEIGHT + ROW_HEIGHT / 2
     ctx.fillStyle = CONFIDENCE_COLORS[confidenceLevel(item.confidence)]
     const barHeight = item.kind === 'group' ? 10 : 24
-    ctx.globalAlpha = item.kind === 'group' ? .75 : 1
+    ctx.globalAlpha = item.kind === 'group' ? .75 : item.completed ? .6 : 1
     ctx.beginPath()
     ctx.roundRect(left, y - barHeight / 2, barWidth, barHeight, item.kind === 'group' ? 3 : 6)
     ctx.fill()
     ctx.globalAlpha = 1
+    if (item.completed) drawDoneMark(ctx, left + barWidth / 2 - 7, y - 7)
     if (item.kind === 'group') {
       ctx.fillStyle = CONFIDENCE_COLORS[confidenceLevel(item.confidence)]
       ctx.fillRect(left, y - 6, 3, 13)

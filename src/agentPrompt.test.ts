@@ -10,6 +10,7 @@ describe('agent import instructions', () => {
     expect(flattenItems(plan.items).map(({ item, depth }) => [item.name, depth]))
       .toEqual([['Planning', 0], ['Research', 1], ['Outline', 2], ['Build', 0]])
     expect(plan.items.map((item) => item.importance)).toEqual(['critical', null, 'investment', 'stretch goal'])
+    expect(plan.items.map((item) => item.completed)).toEqual([false, false, true, false])
     expect(schedulePlan(plan)['task-build']).toEqual({ start: '2026-11-05', end: '2026-11-09' })
   })
 
@@ -18,9 +19,10 @@ describe('agent import instructions', () => {
     expect(AGENT_IMPORT_PROMPT).toContain('- Group: [Group name]')
     expect(AGENT_IMPORT_PROMPT).toContain('Start: [YYYY-MM-DD] | End: [YYYY-MM-DD]')
     expect(AGENT_IMPORT_PROMPT).toContain('"format":"threadline-plan","version":1')
-    for (const field of ['id', 'name', 'kind', 'parentId', 'start', 'end', 'dependencies', 'collapsed', 'confidence', 'importance']) {
+    for (const field of ['id', 'name', 'kind', 'parentId', 'start', 'end', 'dependencies', 'collapsed', 'confidence', 'importance', 'completed']) {
       expect(AGENT_IMPORT_PROMPT).toContain(field)
     }
+    expect(AGENT_IMPORT_PROMPT).toContain('Done: [yes or no]')
     for (const value of ['critical', 'investment', 'debt', 'stretch goal', 'optional']) {
       expect(AGENT_IMPORT_PROMPT).toContain(`"${value}"`)
     }
