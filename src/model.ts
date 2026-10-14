@@ -155,13 +155,32 @@ export function parseNewLine(text: string): { kind: Item['kind']; name: string }
 }
 
 export function parseItemLink(name: string): { label: string; href: string } | null {
-  const match = /^\[([^\]\r\n]+)\]\((https?:\/\/[^\s]+)\)$/i.exec(name.trim())
-  if (!match) return null
+  const value = name.trim()
+  if (!value.startsWith('[') || !value.endsWith(')')) return null
+  let depth = 0
+  let labelEnd = -1
+  for (let index = 0; index < value.length; index++) {
+    if (value[index] === '\\') {
+      index++
+    } else if (value[index] === '[') {
+      depth++
+    } else if (value[index] === ']') {
+      depth--
+      if (depth === 0) {
+        labelEnd = index
+        break
+      }
+      if (depth < 0) return null
+    }
+  }
+  if (labelEnd < 0 || value[labelEnd + 1] !== '(') return null
+  const label = value.slice(1, labelEnd).trim()
+  const href = value.slice(labelEnd + 2, -1)
+  if (!label || /[\r\n]/.test(label) || !/^https?:\/\/\S+$/i.test(href)) return null
   try {
-    const url = new URL(match[2])
+    const url = new URL(href)
     if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return null
-    const label = match[1].trim()
-    return label ? { label, href: url.href } : null
+    return { label, href: url.href }
   } catch {
     return null
   }

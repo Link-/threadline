@@ -126,11 +126,15 @@ describe('groups and dependencies', () => {
       .toEqual({ label: 'Test link', href: 'https://test.com/path?q=1' })
     expect(parseItemLink(' [Review (phase)](http://example.com/issue/42) '))
       .toEqual({ label: 'Review (phase)', href: 'http://example.com/issue/42' })
+    expect(parseItemLink('[[Epic] Scale actions-results Redis hot/cold & backscrolls](https://example.com/issues/42)'))
+      .toEqual({ label: '[Epic] Scale actions-results Redis hot/cold & backscrolls', href: 'https://example.com/issues/42' })
+    expect(displayItemName('[[Epic] Phase](https://example.com/phase)')).toBe('[Epic] Phase')
     expect(displayItemName('[Task](https://test.com)')).toBe('Task')
     for (const name of [
       '[Unsafe](javascript:alert(1))', '[Local](file:///tmp/test)', '[Auth](https://user:pass@test.com)',
       '[Empty]()', '[]((https://test.com))', '[Broken](https://)', 'Plain title',
       'Before [link](https://test.com)', '[bad](https://test.com) extra',
+      '[[Unclosed](https://example.com)', '[Extra] bracket](https://example.com)',
     ]) {
       expect(parseItemLink(name)).toBeNull()
       expect(displayItemName(name)).toBe(name)
