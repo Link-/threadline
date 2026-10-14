@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, daysBetween, dragDates, flattenItems,
-  IMPORTANCE_LABELS, IMPORTANCE_OPTIONS, isDescendant, parseImportance, parseNewLine, parsePlanFile,
+  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, daysBetween, displayItemName, dragDates, flattenItems,
+  IMPORTANCE_LABELS, IMPORTANCE_OPTIONS, isDescendant, parseImportance, parseItemLink, parseNewLine, parsePlanFile,
   parseWorkspace, planFileStem, relocateItem, rowDropIntent, schedulePlan, serializePlan, summarizePlan,
 } from './model'
 import type { Item, Plan, Workspace } from './model'
@@ -121,6 +121,22 @@ describe('plan summary', () => {
 })
 
 describe('groups and dependencies', () => {
+  it('recognizes safe whole-name Markdown links for groups and tasks', () => {
+    expect(parseItemLink('[Test link](https://test.com/path?q=1)'))
+      .toEqual({ label: 'Test link', href: 'https://test.com/path?q=1' })
+    expect(parseItemLink(' [Review (phase)](http://example.com/issue/42) '))
+      .toEqual({ label: 'Review (phase)', href: 'http://example.com/issue/42' })
+    expect(displayItemName('[Task](https://test.com)')).toBe('Task')
+    for (const name of [
+      '[Unsafe](javascript:alert(1))', '[Local](file:///tmp/test)', '[Auth](https://user:pass@test.com)',
+      '[Empty]()', '[]((https://test.com))', '[Broken](https://)', 'Plain title',
+      'Before [link](https://test.com)', '[bad](https://test.com) extra',
+    ]) {
+      expect(parseItemLink(name)).toBeNull()
+      expect(displayItemName(name)).toBe(name)
+    }
+  })
+
   it('parses a typed line as a task or a # group', () => {
     expect(parseNewLine('  Design review  ')).toEqual({ kind: 'task', name: 'Design review' })
     expect(parseNewLine('  # Delivery  ')).toEqual({ kind: 'group', name: 'Delivery' })
@@ -289,6 +305,17 @@ describe('groups and dependencies', () => {
 })
 
 describe('storage and chart layout', () => {
+  it('preserves linked task and group names through browser storage and plan-file import/export', () => {
+    const linkedGroup = { ...group('phase'), name: '[Phase](https://example.com/phase)' }
+    const linkedTask = { ...task('issue', '2026-01-01', '2026-01-03', [], 'phase'), name: '[Issue 42](https://example.com/issues/42)' }
+    const current = plan([linkedGroup, linkedTask])
+    const workspace: Workspace = { version: 1, activePlanId: current.id, plans: [current] }
+    expect(parseWorkspace(JSON.stringify(workspace)).plans[0].items.map((item) => item.name))
+      .toEqual([linkedGroup.name, linkedTask.name])
+    expect(parsePlanFile(serializePlan(current)).items.map((item) => item.name))
+      .toEqual([linkedGroup.name, linkedTask.name])
+  })
+
   it('exports and restores a complete portable plan without losing groups or dependencies', () => {
     const original = createWorkspace().plans[0]
     const file = serializePlan(original)

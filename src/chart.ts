@@ -1,4 +1,4 @@
-import { addDays, confidenceLevel, daysBetween, formatDate, IMPORTANCE_LABELS, MAX_LABEL_WIDTH, MIN_LABEL_WIDTH, planFileStem, summarizePlan, today } from './model'
+import { addDays, confidenceLevel, daysBetween, displayItemName, formatDate, IMPORTANCE_LABELS, MAX_LABEL_WIDTH, MIN_LABEL_WIDTH, planFileStem, summarizePlan, today } from './model'
 import type { ConfidenceLevel, Importance, Plan, Row, Span } from './model'
 
 export { MAX_LABEL_WIDTH, MIN_LABEL_WIDTH } from './model'
@@ -357,7 +357,7 @@ export async function exportPng(
       nameLeft += 20
     }
     ctx.fillStyle = item.completed ? '#819589' : item.kind === 'group' ? '#254c3c' : '#34463d'
-    drawClippedText(ctx, item.name, nameLeft, y + 32, Math.max(0, textRight - nameLeft))
+    drawClippedText(ctx, displayItemName(item.name), nameLeft, y + 32, Math.max(0, textRight - nameLeft))
   }
 
   ctx.save()

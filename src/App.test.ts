@@ -96,6 +96,24 @@ describe('plan summary', () => {
     expect(html).toContain('<span class="child-count">1</span>')
   })
 
+  it('renders linked group and task names as anchors and plain names as double-clickable labels', () => {
+    const html = renderPlan([
+      { id: 'group', name: '[Phase](https://example.com/phase)', kind: 'group', parentId: null,
+        start: '2026-01-01', end: '2026-01-01', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false },
+      { id: 'task', name: '[Issue 42](https://example.com/issues/42)', kind: 'task', parentId: 'group',
+        start: '2026-01-01', end: '2026-01-02', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false },
+      { id: 'plain', name: 'Plain task', kind: 'task', parentId: null,
+        start: '2026-01-02', end: '2026-01-03', dependencies: [], collapsed: false, confidence: null, importance: null, completed: false },
+    ])
+    expect(html).toContain('class="row-title-display row-title-link" href="https://example.com/phase"')
+    expect(html).toContain('class="row-title-display row-title-link" href="https://example.com/issues/42"')
+    expect(html.match(/target="_blank" rel="noopener noreferrer"/g)).toHaveLength(2)
+    expect(html).toContain('>Phase</a>')
+    expect(html).toContain('>Issue 42</a>')
+    expect(html).toContain('>Plain task</button>')
+    expect(html).not.toContain('class="row-title-input"')
+  })
+
   it('marks completed tasks in the row and timeline but leaves groups and other tasks unmarked', () => {
     const html = renderPlan([
       { id: 'group', name: 'Phase', kind: 'group', parentId: null,

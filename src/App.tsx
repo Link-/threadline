@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
-  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, dateNumber, daysBetween, dragDates, flattenItems, formatDate,
+  addDays, adjacentSiblingDrop, barDragAxis, confidenceLevel, createWorkspace, dateNumber, daysBetween, displayItemName, dragDates, flattenItems, formatDate,
   IMPORTANCE_LABELS, IMPORTANCE_OPTIONS, isDescendant, makeItem, parseImportance, parseNewLine, parsePlanFile,
-  parseWorkspace, planFileStem, relocateItem, rowDropIntent, LEGACY_STORAGE_KEY, schedulePlan, serializePlan,
+  parseItemLink, parseWorkspace, planFileStem, relocateItem, rowDropIntent, LEGACY_STORAGE_KEY, schedulePlan, serializePlan,
   STORAGE_KEY, summarizePlan, today,
 } from './model'
 import type { BarAxis, DragMode, Importance, Item, Plan, Row, RowDrop, Span, Workspace } from './model'
@@ -41,6 +41,7 @@ type RowDrag = {
   forbidden: Set<string>
 }
 type LabelResize = { planId: string; pointerId: number; x: number; width: number }
+const LINK_CLICK_DELAY_MS = 500
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -88,6 +89,7 @@ export default function App() {
   const [loadError, setLoadError] = useState(initial.loadError)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [planMenu, setPlanMenu] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -117,6 +119,7 @@ export default function App() {
   const importChooseRef = useRef<HTMLButtonElement>(null)
   const importDialogRef = useRef<HTMLDialogElement>(null)
   const detailPanelRef = useRef<HTMLElement>(null)
+  const linkClickRef = useRef<number | null>(null)
   const dragRef = useRef<Drag | null>(null)
   const suppressBarClickRef = useRef<string | null>(null)
   const rowDragRef = useRef<RowDrag | null>(null)
@@ -218,6 +221,7 @@ export default function App() {
 
   useEffect(() => () => {
     if (rowFrameRef.current !== null) window.cancelAnimationFrame(rowFrameRef.current)
+    if (linkClickRef.current !== null) window.clearTimeout(linkClickRef.current)
   }, [])
 
   useLayoutEffect(() => {
@@ -264,6 +268,46 @@ export default function App() {
     }))
   }
 
+  function cancelPendingLink() {
+    if (linkClickRef.current !== null) window.clearTimeout(linkClickRef.current)
+    linkClickRef.current = null
+  }
+
+  async function editRowName(item: Item) {
+    cancelPendingLink()
+    if (expanded) await toggleExpanded()
+    setHovered(null)
+    setSelectedId(item.id)
+    setEditingId(item.id)
+    window.requestAnimationFrame(() => {
+      const input = boardBodyRef.current?.querySelector<HTMLInputElement>(`[data-row-id="${item.id}"] .row-title-input`)
+      input?.focus({ preventScroll: true })
+      input?.select()
+    })
+  }
+
+  function clickLinkedName(event: ReactMouseEvent<HTMLAnchorElement>, href: string) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.detail === 0) return
+    event.preventDefault()
+    cancelPendingLink()
+    if (event.detail > 1) return
+    linkClickRef.current = window.setTimeout(() => {
+      linkClickRef.current = null
+      const opened = window.open('about:blank', '_blank')
+      if (!opened) {
+        setError('Your browser blocked the new window. Allow pop-ups for Threadline or use ⌘/Ctrl-click.')
+        return
+      }
+      try {
+        opened.opener = null
+        opened.location.replace(href)
+      } catch (openError) {
+        opened.close()
+        setError(`Could not open link: ${message(openError)}`)
+      }
+    }, LINK_CLICK_DELAY_MS)
+  }
+
   async function editRowProperty(item: Item, field: 'importance' | 'confidence' | 'duration') {
     if (expanded) await toggleExpanded()
     setHovered(null)
@@ -294,12 +338,21 @@ export default function App() {
   }
 
   function addTaskBelow(item: Item) {
-    const next = makeItem('task', item.parentId, spans[item.id]?.start ?? item.start)
+    const next = makeItem('task', item.kind === 'group' ? item.id : item.parentId, spans[item.id]?.start ?? item.start)
     if (!updatePlan((current) => {
       const index = current.items.findIndex((entry) => entry.id === item.id)
       if (index < 0) throw new Error('The task to add after could not be found.')
-      return { ...current, items: [...current.items.slice(0, index + 1), next, ...current.items.slice(index + 1)] }
+      return {
+        ...current,
+        items: [
+          ...current.items.slice(0, index),
+          item.kind === 'group' ? { ...current.items[index], collapsed: false } : current.items[index],
+          next,
+          ...current.items.slice(index + 1),
+        ],
+      }
     })) return
+    setEditingId(next.id)
     window.requestAnimationFrame(() => {
       const input = boardBodyRef.current?.querySelector<HTMLInputElement>(`[data-row-id="${next.id}"] .row-title-input`)
       input?.focus({ preventScroll: true })
@@ -311,6 +364,7 @@ export default function App() {
   function changePlan(id: string) {
     applyWorkspace({ ...workspaceRef.current, activePlanId: id })
     setSelectedId(null)
+    setEditingId(null)
     setMobileNav(false)
     setPlanMenu(false)
     setDraft('')
@@ -323,6 +377,7 @@ export default function App() {
     const newPlan: Plan = { id: crypto.randomUUID(), name: `Untitled plan ${current.plans.length + 1}`, items: [] }
     applyWorkspace({ ...current, activePlanId: newPlan.id, plans: [...current.plans, newPlan] })
     setSelectedId(null)
+    setEditingId(null)
     setMobileNav(false)
     setDraft('')
   }
@@ -337,6 +392,7 @@ export default function App() {
     }
     applyWorkspace({ ...current, plans: remaining, activePlanId: remaining[0].id })
     setSelectedId(null)
+    setEditingId(null)
     setPlanMenu(false)
     setDraft('')
   }
@@ -364,7 +420,10 @@ export default function App() {
           })),
       }
     })
-    if (removed) setSelectedId(null)
+    if (removed) {
+      setSelectedId(null)
+      if (editingId === item.id) setEditingId(null)
+    }
     setContextMenu(null)
   }
 
@@ -852,6 +911,7 @@ export default function App() {
       plans: [...current.plans, { ...imported, id }],
     })
     setSelectedId(null)
+    setEditingId(null)
     setMobileNav(false)
     setPlanMenu(false)
     setContextMenu(null)
@@ -901,7 +961,7 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarOpen ? 'plans-open' : ''} ${selected && !expanded ? 'details-open' : ''}`}>
+    <div className={`app-shell ${sidebarOpen ? 'plans-open' : ''} ${selected && !expanded ? 'details-open' : ''}`} onPointerDown={cancelPendingLink}>
       {mobileNav && <button className="nav-scrim" aria-label="Close plans" onClick={() => setMobileNav(false)} />}
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-expanded' : ''} ${mobileNav ? 'sidebar-open' : ''}`}>
         <div className="brand">
@@ -1069,6 +1129,8 @@ export default function App() {
                   const span = spans[item.id]
                   const geometry = span ? barGeometry(span, timeline) : null
                   const childCount = plan.items.filter((entry) => entry.parentId === item.id).length
+                  const link = parseItemLink(item.name)
+                  const name = displayItemName(item.name)
                   return (
                     <div
                       className={`board-row confidence-${confidenceLevel(item.confidence)} ${item.kind === 'group' ? 'group-row' : ''} ${item.completed ? 'completed-row' : ''} ${selectedId === item.id ? 'selected-row' : ''} ${draggingRowId === item.id ? 'row-dragging' : ''} ${dropTarget?.anchorId === item.id ? `drop-${dropTarget.placement}` : ''}`}
@@ -1077,13 +1139,24 @@ export default function App() {
                       data-row-id={item.id}
                       data-depth={depth}
                     >
-                      <div className="row-label" style={{ width: labelWidth }} onPointerEnter={(event) => showHover(event, item)} onPointerLeave={() => setHovered(null)} onPointerDown={() => setHovered(null)}>
+                      <div
+                        className="row-label"
+                        style={{ width: labelWidth }}
+                        onPointerEnter={(event) => showHover(event, item)}
+                        onPointerLeave={() => setHovered(null)}
+                        onPointerDown={() => setHovered(null)}
+                        onContextMenu={(event) => {
+                          if (event.target instanceof Element && event.target.closest('a[href]')) return
+                          event.preventDefault()
+                          setContextMenu({ itemId: item.id, x: Math.min(event.clientX, window.innerWidth - 175), y: Math.min(event.clientY, window.innerHeight - 55) })
+                        }}
+                      >
                         <div className="row-label-inner" style={{ paddingLeft: 7 + depth * 17 }}>
                           <span
                             className="row-grip"
                             role="button"
                             tabIndex={0}
-                            aria-label={`Drag ${item.name} to reorder or move into or out of a group`}
+                            aria-label={`Drag ${name} to reorder or move into or out of a group`}
                             title="Drag to reorder or nest · Arrow keys also work"
                             onPointerDown={(event) => startRowDrag(event, item)}
                             onPointerMove={moveRowDrag}
@@ -1093,49 +1166,68 @@ export default function App() {
                             onKeyDown={(event) => rowGripKeyDown(event, item)}
                           ><Icon name="grip" size={15} /></span>
                           {item.kind === 'group'
-                            ? <button className={`collapse-button ${item.collapsed ? 'collapsed' : ''}`} aria-label={`${item.collapsed ? 'Expand' : 'Collapse'} ${item.name}`} onClick={() => updateItem(item.id, { collapsed: !item.collapsed })}><Icon name="chevron" size={15} /></button>
+                            ? <button className={`collapse-button ${item.collapsed ? 'collapsed' : ''}`} aria-label={`${item.collapsed ? 'Expand' : 'Collapse'} ${name}`} onClick={() => updateItem(item.id, { collapsed: !item.collapsed })}><Icon name="chevron" size={15} /></button>
                             : <button
                                 type="button"
                                 role="checkbox"
                                 aria-checked={item.completed}
-                                aria-label={`Mark ${item.name || 'Untitled task'} as ${item.completed ? 'not done' : 'done'}`}
+                                aria-label={`Mark ${name || 'Untitled task'} as ${item.completed ? 'not done' : 'done'}`}
                                 title={item.completed ? 'Mark as not done' : 'Mark as done'}
                                 className={`task-completion ${item.completed ? 'is-complete' : ''}`}
                                 onClick={() => updateItem(item.id, { completed: !item.completed })}
                               ><Icon name="check" size={13} /></button>}
-                          <input
-                            className="row-title-input"
-                            aria-label={`${item.kind === 'group' ? 'Group' : 'Task'} name`}
-                            value={item.name}
-                            maxLength={100}
-                            onChange={(event) => updateItem(item.id, { name: event.target.value })}
-                            onBlur={() => { if (!item.name.trim()) updateItem(item.id, { name: item.kind === 'group' ? 'Untitled group' : 'Untitled task' }) }}
-                            onKeyDown={(event) => {
-                              if ((event.metaKey || event.ctrlKey) && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-                                event.preventDefault()
-                                moveRowInList(item, event.key === 'ArrowUp' ? -1 : 1, event.currentTarget)
-                              } else if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                                event.preventDefault()
-                                if (event.repeat) return
-                                if (item.kind === 'task') addTaskBelow(item)
-                                else {
-                                  composerRef.current?.focus()
-                                  if (boardRef.current) boardRef.current.scrollTop = boardRef.current.scrollHeight
-                                }
-                              } else if (event.key === 'Backspace' && (event.metaKey || event.ctrlKey)) {
-                                event.preventDefault()
-                                deleteItem(item)
-                              }
-                            }}
-                            onContextMenu={(event) => {
-                              event.preventDefault()
-                              setContextMenu({ itemId: item.id, x: Math.min(event.clientX, window.innerWidth - 175), y: Math.min(event.clientY, window.innerHeight - 55) })
-                            }}
-                          />
+                          {editingId === item.id
+                            ? <input
+                                className="row-title-input"
+                                aria-label={`${item.kind === 'group' ? 'Group' : 'Task'} name`}
+                                value={item.name}
+                                maxLength={2048}
+                                onFocus={() => setSelectedId(item.id)}
+                                onChange={(event) => updateItem(item.id, { name: event.target.value })}
+                                onBlur={() => {
+                                  if (!item.name.trim()) updateItem(item.id, { name: item.kind === 'group' ? 'Untitled group' : 'Untitled task' })
+                                  setEditingId((current) => current === item.id ? null : current)
+                                }}
+                                onKeyDown={(event) => {
+                                  if ((event.metaKey || event.ctrlKey) && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+                                    event.preventDefault()
+                                    moveRowInList(item, event.key === 'ArrowUp' ? -1 : 1, event.currentTarget)
+                                  } else if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                                    event.preventDefault()
+                                    if (event.repeat) return
+                                    if (event.metaKey || event.ctrlKey) addTaskBelow(item)
+                                    else event.currentTarget.blur()
+                                  } else if (event.key === 'Escape') {
+                                    event.currentTarget.blur()
+                                  } else if (event.key === 'Backspace' && (event.metaKey || event.ctrlKey)) {
+                                    event.preventDefault()
+                                    deleteItem(item)
+                                  }
+                                }}
+                              />
+                            : link
+                              ? <a
+                                  className="row-title-display row-title-link"
+                                  href={link.href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={`${link.href} · Double-click or press F2 to edit`}
+                                  onClick={(event) => clickLinkedName(event, link.href)}
+                                  onDoubleClick={(event) => { event.preventDefault(); void editRowName(item) }}
+                                  onKeyDown={(event) => { if (event.key === 'F2') { event.preventDefault(); void editRowName(item) } }}
+                                >{link.label}</a>
+                              : <button
+                                  type="button"
+                                  className="row-title-display"
+                                  title="Double-click or press F2 to edit"
+                                  onClick={() => { cancelPendingLink(); setSelectedId(item.id) }}
+                                  onDoubleClick={() => { void editRowName(item) }}
+                                  onKeyDown={(event) => { if (event.key === 'F2') { event.preventDefault(); void editRowName(item) } }}
+                                >{name}</button>}
                           {item.importance !== null && <button
                             type="button"
                             className={`importance-pill row-importance row-property ${importanceClass(item.importance)}`}
-                            aria-label={`Edit importance of ${item.name}: ${IMPORTANCE_LABELS[item.importance]}`}
+                            aria-label={`Edit importance of ${name}: ${IMPORTANCE_LABELS[item.importance]}`}
                             title="Edit importance"
                             onClick={() => { void editRowProperty(item, 'importance') }}
                           >{IMPORTANCE_LABELS[item.importance]}</button>}
@@ -1143,7 +1235,7 @@ export default function App() {
                           {item.confidence !== null && <button
                             type="button"
                             className="row-confidence row-property"
-                            aria-label={`Edit confidence of ${item.name}: ${item.confidence}%`}
+                            aria-label={`Edit confidence of ${name}: ${item.confidence}%`}
                             title="Edit confidence"
                             onClick={() => { void editRowProperty(item, 'confidence') }}
                           >{item.confidence}%</button>}
@@ -1151,12 +1243,12 @@ export default function App() {
                             ? <button
                                 type="button"
                                 className="row-duration row-property"
-                                aria-label={`Edit duration of ${item.name}`}
+                                aria-label={`Edit duration of ${name}`}
                                 title="Edit duration"
                                 onClick={() => { void editRowProperty(item, 'duration') }}
                               >{span ? `${daysBetween(span.start, span.end)}d` : '—'}</button>
                             : <span className="row-duration">{span ? `${daysBetween(span.start, span.end)}d` : '—'}</span>}
-                          <button className="row-detail-button" aria-label={`Edit details for ${item.name}`} title="Item details" onClick={() => { setHovered(null); setSelectedId(item.id) }}><Icon name="calendar" size={14} /></button>
+                          <button className="row-detail-button" aria-label={`Edit details for ${name}`} title="Item details" onClick={() => { cancelPendingLink(); setHovered(null); setSelectedId(item.id) }}><Icon name="calendar" size={14} /></button>
                         </div>
                       </div>
                       <div className="row-track" style={{ width: timeline.width, backgroundSize: `${dayWidth}px 100%` }}>
@@ -1164,7 +1256,7 @@ export default function App() {
                           ? <button
                               className={`group-bar ${draggingBarId === item.id ? 'dragging' : ''}`}
                               style={{ left: geometry.left, width: geometry.width }}
-                              aria-label={`Select group ${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}. Drag vertically to reorder or nest. Arrow keys up and down reorder.`}
+                              aria-label={`Select group ${name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}. Drag vertically to reorder or nest. Arrow keys up and down reorder.`}
                               onPointerEnter={(event) => showHover(event, item)}
                               onPointerLeave={() => setHovered(null)}
                               onPointerDown={(event) => startDrag(event, item, 'move')}
@@ -1180,7 +1272,7 @@ export default function App() {
                               style={{ left: geometry.left, width: geometry.width }}
                               role="button"
                               tabIndex={0}
-                              aria-label={`${item.name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}${item.completed ? ', done' : ''}. Drag sideways to move dates, vertically to reorder or nest, or drag edges to resize. Arrow up and down reorder; left and right move dates.`}
+                              aria-label={`${name}, ${itemDateLabel(span)}, ${confidenceText(item)}${importanceText(item)}${item.completed ? ', done' : ''}. Drag sideways to move dates, vertically to reorder or nest, or drag edges to resize. Arrow up and down reorder; left and right move dates.`}
                               onPointerEnter={(event) => showHover(event, item)}
                               onPointerLeave={() => setHovered(null)}
                               onPointerDown={(event) => startDrag(event, item, 'move')}
@@ -1192,8 +1284,8 @@ export default function App() {
                               onClick={(event) => selectBar(event, item)}
                             >
                               {item.completed && <span className="bar-completion"><Icon name="check" size={13} /></span>}
-                              <div className="resize-handle start-handle" role="button" aria-label={`Resize start of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'start')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
-                              <div className="resize-handle end-handle" role="button" aria-label={`Resize end of ${item.name}`} onPointerDown={(event) => startDrag(event, item, 'end')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
+                              <div className="resize-handle start-handle" role="button" aria-label={`Resize start of ${name}`} onPointerDown={(event) => startDrag(event, item, 'start')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
+                              <div className="resize-handle end-handle" role="button" aria-label={`Resize end of ${name}`} onPointerDown={(event) => startDrag(event, item, 'end')} onPointerMove={dragMove} onPointerUp={endDrag} onPointerCancel={cancelBarDrag} onLostPointerCapture={cancelBarDrag} />
                             </div>)}
                       </div>
                     </div>
@@ -1209,7 +1301,7 @@ export default function App() {
                         aria-label="New timeline row"
                         placeholder={rows.length ? 'Task name or # Group…' : 'First task or # Group…'}
                         value={draft}
-                        maxLength={101}
+                        maxLength={2049}
                         onChange={(event) => setDraft(event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') {
@@ -1234,12 +1326,12 @@ export default function App() {
           <div className="chart-footer"><span><span className="footer-dot" /> Drag bars or dotted handles to reorder or nest rows</span><span># creates a group · Right-click or ⌘/Ctrl+Backspace removes a row</span></div>
           {draggingRowId && plan.items.filter((item) => item.id === draggingRowId).map((item) => (
             <div ref={rowPreviewRef} className={`row-drag-preview confidence-${confidenceLevel(item.confidence)} ${rowDragRef.current?.source === 'bar' ? 'bar-origin' : ''}`} key={item.id} aria-hidden="true">
-              <span className="preview-dot" />{item.name || (item.kind === 'group' ? 'Untitled group' : 'Untitled task')}
+              <span className="preview-dot" />{displayItemName(item.name) || (item.kind === 'group' ? 'Untitled group' : 'Untitled task')}
             </div>
           ))}
           {hovered && hoveredItem && (
             <div className={`item-tooltip ${hovered.above ? 'above' : ''}`} role="tooltip" style={{ left: hovered.left, top: hovered.top }}>
-              <span className="tooltip-name">{hoveredItem.name || 'Untitled'}</span>
+              <span className="tooltip-name">{displayItemName(hoveredItem.name) || 'Untitled'}</span>
               {hoveredItem.kind === 'task' && hoveredItem.completed && <span className="tooltip-done"><Icon name="check" size={12} /> Done</span>}
               {hoveredItem.importance !== null && <span className={`importance-pill tooltip-importance ${importanceClass(hoveredItem.importance)}`}>{IMPORTANCE_LABELS[hoveredItem.importance]}</span>}
               <span className={`tooltip-confidence confidence-${confidenceLevel(hoveredItem.confidence)}`}>{confidenceText(hoveredItem)}</span>
@@ -1261,7 +1353,7 @@ export default function App() {
             </div>
           )}
         </section>
-        <p className="page-footnote">Type to add or rename rows. Drag bars vertically to reorder or nest, and task bars sideways to change dates. Right-click a row to remove it.</p>
+        <p className="page-footnote">Type in the bottom row to add. Double-click a name to edit; Enter finishes editing, and ⌘/Ctrl+Enter adds a task below. Linked names open in a new window. Drag bars vertically to reorder or nest, and task bars sideways to change dates. Right-click a row to remove it.</p>
       </main>
 
       {selected && !expanded && (
@@ -1269,7 +1361,7 @@ export default function App() {
             <div className="detail-top"><span>ITEM DETAILS</span><button className="icon-button" aria-label="Close details" onClick={() => setSelectedId(null)}><Icon name="close" size={18} /></button></div>
             <div className="detail-content">
               <div className={`kind-badge ${selected.kind}`}><Icon name={selected.kind === 'group' ? 'folder' : 'tasks'} size={15} /> {selected.kind}</div>
-              <h2 className="detail-name">{selected.name || 'Untitled'}</h2>
+              <h2 className="detail-name">{displayItemName(selected.name) || 'Untitled'}</h2>
               {selected.kind === 'task' && <label className="detail-completion">
                 <input type="checkbox" checked={selected.completed} onChange={(event) => updateItem(selected.id, { completed: event.target.checked })} />
                 Task done
@@ -1375,7 +1467,7 @@ export default function App() {
                       ? allRows.filter(({ item }) => item.id !== selected.id).map(({ item, depth }) => {
                           const checked = selected.dependencies.includes(item.id)
                           const enabled = canDependOn(selected, item.id)
-                          const name = item.name || 'Untitled'
+                          const name = displayItemName(item.name) || 'Untitled'
                           return <label className={`dependency-option ${!enabled ? 'disabled' : ''}`} key={item.id} style={{ paddingLeft: 11 + depth * 13 }} title={enabled ? name : `${name}\nThis link would create a cycle or refers to an empty group`}>
                             <input type="checkbox" checked={checked} disabled={!enabled} onChange={() => toggleDependency(selected, item.id)} />
                             <span className="checkbox-face"><Icon name="check" size={13} /></span>

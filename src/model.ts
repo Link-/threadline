@@ -154,6 +154,23 @@ export function parseNewLine(text: string): { kind: Item['kind']; name: string }
     : { kind: 'task', name: value }
 }
 
+export function parseItemLink(name: string): { label: string; href: string } | null {
+  const match = /^\[([^\]\r\n]+)\]\((https?:\/\/[^\s]+)\)$/i.exec(name.trim())
+  if (!match) return null
+  try {
+    const url = new URL(match[2])
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return null
+    const label = match[1].trim()
+    return label ? { label, href: url.href } : null
+  } catch {
+    return null
+  }
+}
+
+export function displayItemName(name: string): string {
+  return parseItemLink(name)?.label ?? name
+}
+
 export function rowDropIntent(
   items: Item[], targetId: string, depth: number, x: number, y: number, previous: RowDrop | null = null,
 ): RowDrop {

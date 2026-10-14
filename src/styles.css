@@ -338,11 +338,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .task-completion svg { opacity: 0; }
 .task-completion.is-complete { border-color: #398d6c; background: #398d6c; }
 .task-completion.is-complete svg { opacity: 1; }
-.row-title-input { min-width: 0; flex: 1; height: 30px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #596b5e; font-size: 12px; font-weight: 600; padding: 0 4px; text-overflow: ellipsis; }
-.row-title-input:hover { border-color: #dce8dd; background: #fff; }
-.row-title-input:focus { border-color: #89bd9d; background: #fff; outline: none; }
-.group-row .row-title-input { color: #365943; font-weight: 800; }
-.completed-row .row-title-input:not(:focus) { color: #819589; text-decoration: line-through; text-decoration-color: #a3b8a8; }
+.row-title-input, .row-title-display { min-width: 0; flex: 1; height: 30px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #596b5e; font-size: 12px; font-weight: 600; padding: 0 4px; text-overflow: ellipsis; }
+.row-title-display { display: block; overflow: hidden; white-space: nowrap; text-align: left; text-decoration: none; line-height: 28px; cursor: pointer; }
+.row-title-input:hover, .row-title-display:not(.row-title-link):hover { border-color: #dce8dd; background: #fff; }
+.row-title-input:focus, .row-title-display:not(.row-title-link):focus-visible { border-color: #89bd9d; background: #fff; outline: none; }
+.row-title-link, .row-title-link:visited { color: #338461; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.group-row .row-title-input, .group-row .row-title-display { font-weight: 800; }
+.group-row .row-title-input, .group-row .row-title-display:not(.row-title-link) { color: #365943; }
+.completed-row .row-title-input:not(:focus), .completed-row .row-title-display { color: #819589; text-decoration: line-through; text-decoration-color: #a3b8a8; }
 .importance-critical { --importance-background: #fce9e6; --importance-foreground: #ae4139; }
 .importance-investment { --importance-background: #e7efff; --importance-foreground: #345b99; }
 .importance-debt { --importance-background: #fff1d7; --importance-foreground: #895d20; }
@@ -353,7 +356,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .row-property { border: 0; cursor: pointer; }
 .row-property:hover { filter: brightness(.9); text-decoration: underline; }
 .compact-labels .row-label-inner { gap: 4px; padding-right: 5px; }
-.compact-labels .row-title-input { min-width: 32px; }
+.compact-labels .row-title-input, .compact-labels .row-title-display { min-width: 32px; }
 .compact-labels .row-importance { max-width: 56px; }
 .compact-labels .board-corner span:nth-child(2) { display: none; }
 .compact-labels .row-confidence, .compact-labels .row-duration, .compact-labels .child-count { display: none; }

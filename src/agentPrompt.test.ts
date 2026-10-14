@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AGENT_IMPORT_PROMPT } from './agentPrompt'
-import { flattenItems, parsePlanFile, schedulePlan } from './model'
+import { flattenItems, parseItemLink, parsePlanFile, schedulePlan } from './model'
 
 describe('agent import instructions', () => {
   it('provides a complete example that the real importer accepts, including nested groups and dependencies', () => {
@@ -8,7 +8,8 @@ describe('agent import instructions', () => {
     if (!sample) throw new Error('The import prompt has no JSON example.')
     const plan = parsePlanFile(sample)
     expect(flattenItems(plan.items).map(({ item, depth }) => [item.name, depth]))
-      .toEqual([['Planning', 0], ['Research', 1], ['Outline', 2], ['Build', 0]])
+      .toEqual([['Planning', 0], ['Research', 1], ['[Outline](https://example.com/tasks/outline)', 2], ['Build', 0]])
+    expect(parseItemLink(plan.items[2].name)).toEqual({ label: 'Outline', href: 'https://example.com/tasks/outline' })
     expect(plan.items.map((item) => item.importance)).toEqual(['critical', null, 'investment', 'stretch goal'])
     expect(plan.items.map((item) => item.completed)).toEqual([false, false, true, false])
     expect(schedulePlan(plan)['task-build']).toEqual({ start: '2026-11-05', end: '2026-11-09' })
@@ -23,6 +24,8 @@ describe('agent import instructions', () => {
       expect(AGENT_IMPORT_PROMPT).toContain(field)
     }
     expect(AGENT_IMPORT_PROMPT).toContain('Done: [yes or no]')
+    expect(AGENT_IMPORT_PROMPT).toContain('Task and group titles can be plain text or a Markdown link')
+    expect(AGENT_IMPORT_PROMPT).toContain('To link a task title, write it as: Task: [Visible title](https://example.com/task)')
     for (const value of ['critical', 'investment', 'debt', 'stretch goal', 'optional']) {
       expect(AGENT_IMPORT_PROMPT).toContain(`"${value}"`)
     }
